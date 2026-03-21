@@ -2,7 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
-import { encryptKey } from '../services/crypto.js';
+import { encryptKey, getDecryptedKey } from '../services/crypto.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -104,11 +104,30 @@ router.get('/callback', async (req, res) => {
 });
 
 router.get('/me', requireAuth, async (req: any, res) => {
-  const { id, email, name, picture } = req.user;
-  const apiKeys = await prisma.apiKey.findMany({ where: { userId: id } });
-  const hasGeminiKey = apiKeys.some((k: any) => k.provider === 'google');
-  const hasOllamaKey = apiKeys.some((k: any) => k.provider === 'ollama');
-  res.json({ id, email, name, picture, hasGeminiKey, hasOllamaKey });
+  const user = await prisma.user.findUnique({ 
+    where: { id: req.user.id },
+    include: { apiKeys: true }
+  });
+  
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const hasGeminiKey = user.apiKeys.some((k: any) => k.provider === 'google');
+  const hasOllamaKey = user.apiKeys.some((k: any) => k.provider === 'ollama');
+  
+  res.json({ 
+    id: user.id, 
+    email: user.email, 
+    name: user.name, 
+    picture: user.picture, 
+    hasGeminiKey, 
+    hasOllamaKey,
+    testProvider: user.testProvider,
+    testModel: user.testModel,
+    analysisProvider: user.analysisProvider,
+    analysisModel: user.analysisModel,
+    improvementProvider: user.improvementProvider,
+    improvementModel: user.improvementModel
+  });
 });
 
 router.post('/logout', (req, res) => {
@@ -116,8 +135,23 @@ router.post('/logout', (req, res) => {
   res.json({ success: true });
 });
 
+router.get('/keys', requireAuth, async (req: any, res) => {
+  const googleKey = await getDecryptedKey(req.user.id, 'google');
+  const ollamaKey = await getDecryptedKey(req.user.id, 'ollama');
+  res.json({ google: googleKey, ollama: ollamaKey });
+});
+
 router.post('/settings', requireAuth, async (req: any, res) => {
-  const { geminiKey, ollamaKey } = req.body;
+  const { 
+    geminiKey, 
+    ollamaKey,
+    testProvider,
+    testModel,
+    analysisProvider,
+    analysisModel,
+    improvementProvider,
+    improvementModel
+  } = req.body;
   
   const updateKey = async (provider: string, key: string | undefined) => {
     if (key === undefined) return;
@@ -136,6 +170,20 @@ router.post('/settings', requireAuth, async (req: any, res) => {
   try {
     await updateKey('google', geminiKey);
     await updateKey('ollama', ollamaKey);
+
+    // Update user preferences
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        testProvider,
+        testModel,
+        analysisProvider,
+        analysisModel,
+        improvementProvider,
+        improvementModel
+      }
+    });
+
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

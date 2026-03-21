@@ -4,12 +4,19 @@ import { Send, Bot, User, Code, ChevronDown, ChevronUp, Loader2 } from 'lucide-r
 import Markdown from 'react-markdown';
 
 export function TestChat() {
-  const { messages, sendMessage, currentPrompt } = useStore();
+  const { messages, sendMessage, currentPrompt, user } = useStore();
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [provider, setProvider] = useState('google');
-  const [model, setModel] = useState('gemini-3-flash-preview');
+  const [provider, setProvider] = useState(user?.testProvider || 'google');
+  const [model, setModel] = useState(user?.testModel || 'gemini-3.1-flash-lite-preview');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (user) {
+      setProvider(user.testProvider || 'google');
+      setModel(user.testModel || 'gemini-3.1-flash-lite-preview');
+    }
+  }, [user]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -129,18 +136,32 @@ function MessageBubble({ message }: { message: any }) {
             )}
           </div>
           
-          {!isUser && message.debugInfo && (
-            <div className="mt-1">
-              <button 
-                onClick={() => setShowDebug(!showDebug)}
-                className="flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-500 transition-colors"
-              >
-                <Code className="w-3 h-3" /> Отладочная информация {showDebug ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              </button>
+          {!isUser && (message.debugInfo || message.totalTokens || message.latencyMs) && (
+            <div className="mt-2 flex flex-col gap-2">
+              <div className="flex items-center gap-3 text-[10px] text-slate-500 font-medium">
+                {message.totalTokens !== undefined && (
+                  <span className="flex items-center gap-1">
+                    <Code className="w-3 h-3" /> {message.totalTokens} токенов
+                  </span>
+                )}
+                {message.latencyMs !== undefined && (
+                  <span className="flex items-center gap-1">
+                    <Loader2 className="w-3 h-3" /> {message.latencyMs} мс
+                  </span>
+                )}
+                {message.debugInfo && (
+                  <button 
+                    onClick={() => setShowDebug(!showDebug)}
+                    className="flex items-center gap-1 text-indigo-500 hover:text-indigo-600 transition-colors"
+                  >
+                    {showDebug ? 'Скрыть детали' : 'Детали'} {showDebug ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                )}
+              </div>
               
-              {showDebug && (
-                <div className="mt-2 p-3 bg-slate-900 text-slate-300 rounded-lg text-xs font-mono overflow-x-auto max-w-full border border-slate-700">
-                  <pre>{JSON.stringify(JSON.parse(message.debugInfo), null, 2)}</pre>
+              {showDebug && message.debugInfo && (
+                <div className="p-3 bg-slate-100 dark:bg-slate-900/50 text-slate-800 dark:text-slate-300 rounded-lg text-[10px] font-mono overflow-x-auto max-w-full border border-slate-200 dark:border-slate-800 shadow-inner">
+                  <pre className="whitespace-pre-wrap">{JSON.stringify(JSON.parse(message.debugInfo), null, 2)}</pre>
                 </div>
               )}
             </div>

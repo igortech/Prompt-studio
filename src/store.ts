@@ -6,11 +6,41 @@ const apiFetch = async (url: string, options: RequestInit = {}) => {
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  return fetch(url, {
+  
+  const response = await fetch(url, {
     ...options,
     headers,
     credentials: 'include'
   });
+
+  if (!response.ok) {
+    let errorMessage = `Error: ${response.status} ${response.statusText}`;
+    try {
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } else {
+        // If it's not JSON, it might be an HTML error page
+        const text = await response.text();
+        if (text.includes('<!doctype html>') || text.includes('<html>')) {
+          errorMessage = `Server error (HTML returned instead of JSON). Check if the API route exists: ${url}`;
+        } else {
+          errorMessage = text || errorMessage;
+        }
+      }
+    } catch (e) {
+      // Ignore parsing errors for error messages
+    }
+    throw new Error(errorMessage);
+  }
+
+  const contentType = response.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    return response.json();
+  }
+  
+  return response;
 };
 
 export type PromptVersion = {
@@ -36,6 +66,10 @@ export type Message = {
   role: 'user' | 'assistant' | 'system';
   content: string;
   debugInfo?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  latencyMs?: number;
   createdAt: string;
 };
 
@@ -46,6 +80,12 @@ export type User = {
   picture: string;
   hasGeminiKey: boolean;
   hasOllamaKey: boolean;
+  testProvider?: string;
+  testModel?: string;
+  analysisProvider?: string;
+  analysisModel?: string;
+  improvementProvider?: string;
+  improvementModel?: string;
 };
 
 export type ImprovementMessage = {
@@ -87,6 +127,12 @@ export type BatchTestResult = {
   results: TestResult[];
 };
 
+export type Notification = {
+  id: string;
+  type: 'success' | 'error' | 'info';
+  message: string;
+};
+
 type Store = {
   user: User | null;
   isLoadingAuth: boolean;
@@ -101,14 +147,27 @@ type Store = {
   isTesting: boolean;
   evaluation: any | null;
   recommendations: any | null;
+  notifications: Notification[];
+  theme: 'light' | 'dark';
   
   checkAuth: () => Promise<void>;
   logout: () => Promise<void>;
-  updateSettings: (geminiKey: string, ollamaKey: string) => Promise<void>;
+  toggleTheme: () => void;
+  setTheme: (theme: 'light' | 'dark') => void;
+  updateSettings: (settings: {
+    geminiKey?: string;
+    ollamaKey?: string;
+    testProvider?: string;
+    testModel?: string;
+    analysisProvider?: string;
+    analysisModel?: string;
+    improvementProvider?: string;
+    improvementModel?: string;
+  }) => Promise<void>;
   
   fetchPrompts: () => Promise<void>;
   createPrompt: (data: Partial<Prompt>) => Promise<void>;
-  updatePrompt: (id: string, data: Partial<Prompt>) => Promise<void>;
+  updatePrompt: (id: string, data: Partial<Prompt> & { saveVersion?: boolean; changeNote?: string }) => Promise<void>;
   selectPrompt: (id: string) => Promise<void>;
   
   sendMessage: (content: string, parameters?: any, provider?: string, model?: string) => Promise<void>;
@@ -122,6 +181,9 @@ type Store = {
   deleteTestCase: (id: string) => Promise<void>;
   runTests: (versionId?: string) => Promise<void>;
   runSingleTest: (testCaseId: string, versionId?: string) => Promise<void>;
+  
+  addNotification: (type: Notification['type'], message: string) => void;
+  removeNotification: (id: string) => void;
 };
 
 export const useStore = create<Store>((set, get) => ({
@@ -138,90 +200,150 @@ export const useStore = create<Store>((set, get) => ({
   isTesting: false,
   evaluation: null,
   recommendations: null,
+  notifications: [],
+  theme: (localStorage.getItem('theme') as 'light' | 'dark') || 'dark',
+
+  addNotification: (type, message) => {
+    const id = Date.now().toString();
+    set((state) => ({
+      notifications: [...state.notifications, { id, type, message }]
+    }));
+    setTimeout(() => get().removeNotification(id), 5000);
+  },
+
+  removeNotification: (id) => {
+    set((state) => ({
+      notifications: state.notifications.filter(n => n.id !== id)
+    }));
+  },
+
+  toggleTheme: () => {
+    const newTheme = get().theme === 'dark' ? 'light' : 'dark';
+    set({ theme: newTheme });
+    localStorage.setItem('theme', newTheme);
+    document.documentElement.classList.toggle('dark', newTheme === 'dark');
+  },
+
+  setTheme: (theme) => {
+    set({ theme });
+    localStorage.setItem('theme', theme);
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  },
 
   checkAuth: async () => {
     try {
-      const res = await apiFetch('/api/auth/me');
-      if (res.ok) {
-        const user = await res.json();
-        set({ user, isLoadingAuth: false });
-        get().fetchPrompts();
-      } else {
-        set({ user: null, isLoadingAuth: false });
-      }
+      const user = await apiFetch('/api/auth/me');
+      set({ user, isLoadingAuth: false });
+      get().fetchPrompts();
     } catch (e) {
       set({ user: null, isLoadingAuth: false });
     }
   },
 
   logout: async () => {
-    await apiFetch('/api/auth/logout', { method: 'POST' });
+    try {
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) {
+      console.error('Logout error:', e);
+    }
     localStorage.removeItem('token');
     set({ user: null, prompts: [], currentPrompt: null, messages: [] });
   },
 
-  updateSettings: async (geminiKey, ollamaKey) => {
-    const res = await apiFetch('/api/auth/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ geminiKey, ollamaKey })
-    });
-    if (res.ok) {
+  updateSettings: async (settings) => {
+    try {
+      await apiFetch('/api/auth/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      });
+      
       set((state) => ({
-        user: state.user ? { ...state.user, hasGeminiKey: !!geminiKey, hasOllamaKey: !!ollamaKey } : null
+        user: state.user ? { 
+          ...state.user, 
+          ...settings,
+          hasGeminiKey: settings.geminiKey !== undefined ? !!settings.geminiKey : state.user.hasGeminiKey,
+          hasOllamaKey: settings.ollamaKey !== undefined ? !!settings.ollamaKey : state.user.hasOllamaKey
+        } : null
       }));
+      get().addNotification('success', 'Настройки сохранены');
+    } catch (e: any) {
+      get().addNotification('error', e.message || 'Не удалось сохранить настройки');
     }
   },
 
   fetchPrompts: async () => {
-    const res = await apiFetch('/api/prompts');
-    const data = await res.json();
-    set({ prompts: data });
-    if (data.length > 0 && !get().currentPrompt) {
-      get().selectPrompt(data[0].id);
-    } else if (data.length === 0) {
-      get().createPrompt({ name: 'My First Prompt', content: 'You are a helpful assistant.' });
+    try {
+      const data = await apiFetch('/api/prompts');
+      set({ prompts: data });
+      if (data.length > 0 && !get().currentPrompt) {
+        get().selectPrompt(data[0].id);
+      } else if (data.length === 0) {
+        get().createPrompt({ name: 'My First Prompt', content: 'You are a helpful assistant.' });
+      }
+    } catch (e: any) {
+      get().addNotification('error', e.message || 'Не удалось загрузить промпты');
     }
   },
 
   createPrompt: async (data) => {
-    const res = await apiFetch('/api/prompts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    const newPrompt = await res.json();
-    set((state) => ({ prompts: [newPrompt, ...state.prompts] }));
-    get().selectPrompt(newPrompt.id);
+    try {
+      const newPrompt = await apiFetch('/api/prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      set((state) => ({ prompts: [newPrompt, ...state.prompts] }));
+      get().selectPrompt(newPrompt.id);
+    } catch (e: any) {
+      get().addNotification('error', e.message || 'Не удалось создать промпт');
+    }
   },
 
   updatePrompt: async (id, data) => {
-    const res = await apiFetch(`/api/prompts/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    const updated = await res.json();
-    set((state) => ({
-      prompts: state.prompts.map((p) => (p.id === id ? updated : p)),
-      currentPrompt: state.currentPrompt?.id === id ? updated : state.currentPrompt,
-    }));
+    try {
+      const updated = await apiFetch(`/api/prompts/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      
+      // If we saved a version, we should re-fetch the prompt to get the updated versions list
+      if (data.saveVersion) {
+        const fullPrompt = await apiFetch(`/api/prompts/${id}`);
+        set((state) => ({
+          prompts: state.prompts.map((p) => (p.id === id ? fullPrompt : p)),
+          currentPrompt: state.currentPrompt?.id === id ? fullPrompt : state.currentPrompt,
+        }));
+      } else {
+        set((state) => ({
+          prompts: state.prompts.map((p) => (p.id === id ? updated : p)),
+          currentPrompt: state.currentPrompt?.id === id ? updated : state.currentPrompt,
+        }));
+      }
+    } catch (e: any) {
+      get().addNotification('error', e.message || 'Не удалось обновить промпт');
+    }
   },
 
   selectPrompt: async (id) => {
-    const res = await apiFetch(`/api/prompts/${id}`);
-    const prompt = await res.json();
-    
-    const msgRes = await apiFetch(`/api/chat/prompt/${id}`);
-    const messages = await msgRes.json();
-    
-    set({ currentPrompt: prompt, messages, improvementMessages: [], evaluation: null, recommendations: null, testResults: null });
-    get().fetchTestCases();
+    try {
+      const prompt = await apiFetch(`/api/prompts/${id}`);
+      const messages = await apiFetch(`/api/chat/prompt/${id}`);
+      
+      set({ currentPrompt: prompt, messages, improvementMessages: [], evaluation: null, recommendations: null, testResults: null });
+      get().fetchTestCases();
+    } catch (e: any) {
+      get().addNotification('error', e.message || 'Не удалось выбрать промпт');
+    }
   },
 
-  sendMessage: async (content, parameters, provider = 'google', model = 'gemini-3-flash-preview') => {
-    const { currentPrompt } = get();
+  sendMessage: async (content, parameters, provider, model) => {
+    const { currentPrompt, user } = get();
     if (!currentPrompt) return;
+
+    const finalProvider = provider || user?.testProvider || 'google';
+    const finalModel = model || user?.testModel || 'gemini-3.1-flash-lite-preview';
 
     // Optimistic UI
     const tempId = Date.now().toString();
@@ -230,24 +352,19 @@ export const useStore = create<Store>((set, get) => ({
     }));
 
     try {
-      const res = await apiFetch(`/api/chat/prompt/${currentPrompt.id}`, {
+      const data = await apiFetch(`/api/chat/prompt/${currentPrompt.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, parameters, provider, model }),
+        body: JSON.stringify({ content, parameters, provider: finalProvider, model: finalModel }),
       });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        alert(data.error || 'Не удалось отправить сообщение');
-        set((state) => ({ messages: state.messages.filter(m => m.id !== tempId) }));
-        return;
-      }
       
       set((state) => ({
         messages: state.messages.map(m => m.id === tempId ? data.userMessage : m).concat(data.assistantMessage),
       }));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      get().addNotification('error', e.message || 'Не удалось отправить сообщение');
+      set((state) => ({ messages: state.messages.filter(m => m.id !== tempId) }));
     }
   },
 
@@ -263,18 +380,11 @@ export const useStore = create<Store>((set, get) => ({
 
     try {
       const history = improvementMessages.map(m => ({ role: m.role, content: m.content }));
-      const res = await apiFetch(`/api/prompts/${currentPrompt.id}/improvement-chat`, {
+      const data = await apiFetch(`/api/prompts/${currentPrompt.id}/improvement-chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: content, history }),
       });
-      const data = await res.json();
-      
-      if (!res.ok) {
-        alert(data.error || 'Не удалось отправить сообщение');
-        set((state) => ({ improvementMessages: state.improvementMessages.filter(m => m.id !== tempId) }));
-        return;
-      }
       
       set((state) => ({
         improvementMessages: [...state.improvementMessages, {
@@ -286,8 +396,10 @@ export const useStore = create<Store>((set, get) => ({
           diffSummary: data.diff_summary
         }]
       }));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      get().addNotification('error', e.message || 'Не удалось отправить сообщение');
+      set((state) => ({ improvementMessages: state.improvementMessages.filter(m => m.id !== tempId) }));
     } finally {
       set({ isImproving: false });
     }
@@ -299,15 +411,11 @@ export const useStore = create<Store>((set, get) => ({
     
     set({ isAnalyzing: true });
     try {
-      const res = await apiFetch(`/api/prompts/${currentPrompt.id}/analyze`, { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || 'Не удалось проанализировать промпт');
-        return;
-      }
+      const data = await apiFetch(`/api/prompts/${currentPrompt.id}/analyze`, { method: 'POST' });
       set({ evaluation: data });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      get().addNotification('error', e.message || 'Не удалось проанализировать промпт');
     } finally {
       set({ isAnalyzing: false });
     }
@@ -319,16 +427,11 @@ export const useStore = create<Store>((set, get) => ({
     
     set({ isImproving: true });
     try {
-      const res = await apiFetch(`/api/prompts/${currentPrompt.id}/improve`, {
+      const data = await apiFetch(`/api/prompts/${currentPrompt.id}/improve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ analysisResult: evaluation }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || 'Не удалось улучшить промпт');
-        return;
-      }
       
       // Convert the old recommendations format into a chat message
       const content = `Here is my analysis and suggestions for improvement:\n\n**Analysis:** ${data.analysis}\n\n**Suggestions:**\n${data.suggestions?.map((s: any) => `- **${s.priority.toUpperCase()} Priority**: ${s.diff}\n  *Reasoning*: ${s.reasoning}\n  *Expected Effect*: ${s.expected_effect}`).join('\n')}\n\n**Risks:**\n${data.risks?.map((r: string) => `- ${r}`).join('\n')}`;
@@ -343,8 +446,9 @@ export const useStore = create<Store>((set, get) => ({
           diffSummary: 'Applied all suggested improvements.'
         }]
       }));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      get().addNotification('error', e.message || 'Не удалось улучшить промпт');
     } finally {
       set({ isImproving: false });
     }
@@ -354,11 +458,11 @@ export const useStore = create<Store>((set, get) => ({
     const { currentPrompt } = get();
     if (!currentPrompt) return;
     try {
-      const res = await apiFetch(`/api/prompts/${currentPrompt.id}/test-cases`);
-      const data = await res.json();
+      const data = await apiFetch(`/api/test-cases/prompt/${currentPrompt.id}`);
       set({ testCases: data });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      get().addNotification('error', e.message || 'Не удалось загрузить тест-кейсы');
     }
   },
 
@@ -366,31 +470,31 @@ export const useStore = create<Store>((set, get) => ({
     const { currentPrompt } = get();
     if (!currentPrompt) return;
     try {
-      const res = await apiFetch(`/api/prompts/${currentPrompt.id}/test-cases`, {
+      const newTestCase = await apiFetch(`/api/test-cases/prompt/${currentPrompt.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      const newTestCase = await res.json();
       set((state) => ({ testCases: [...state.testCases, newTestCase] }));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      get().addNotification('error', e.message || 'Не удалось создать тест-кейс');
     }
   },
 
   updateTestCase: async (id, data) => {
     try {
-      const res = await apiFetch(`/api/test-cases/${id}`, {
+      const updated = await apiFetch(`/api/test-cases/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      const updated = await res.json();
       set((state) => ({
         testCases: state.testCases.map((tc) => (tc.id === id ? updated : tc)),
       }));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      get().addNotification('error', e.message || 'Не удалось обновить тест-кейс');
     }
   },
 
@@ -400,8 +504,9 @@ export const useStore = create<Store>((set, get) => ({
       set((state) => ({
         testCases: state.testCases.filter((tc) => tc.id !== id),
       }));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      get().addNotification('error', e.message || 'Не удалось удалить тест-кейс');
     }
   },
 
@@ -411,19 +516,15 @@ export const useStore = create<Store>((set, get) => ({
     
     set({ isTesting: true, testResults: null });
     try {
-      const res = await apiFetch(`/api/prompts/${currentPrompt.id}/run-tests`, { 
+      const data = await apiFetch(`/api/prompts/${currentPrompt.id}/run-tests`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ versionId })
       });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || 'Не удалось запустить тесты');
-        return;
-      }
       set({ testResults: data });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      get().addNotification('error', e.message || 'Не удалось запустить тесты');
     } finally {
       set({ isTesting: false });
     }
@@ -432,16 +533,11 @@ export const useStore = create<Store>((set, get) => ({
   runSingleTest: async (testCaseId: string, versionId?: string) => {
     set({ isTesting: true });
     try {
-      const res = await apiFetch(`/api/test-cases/${testCaseId}/run`, { 
+      const data = await apiFetch(`/api/test-cases/${testCaseId}/run`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ versionId })
       });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || 'Не удалось запустить тест');
-        return;
-      }
       
       const { testResults, testCases } = get();
       if (testResults) {
@@ -472,8 +568,9 @@ export const useStore = create<Store>((set, get) => ({
           }
         });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      get().addNotification('error', e.message || 'Не удалось запустить тест');
     } finally {
       set({ isTesting: false });
     }

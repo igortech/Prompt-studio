@@ -8,13 +8,8 @@ import { SettingsModal } from './SettingsModal';
 import { Settings, LogOut, Moon, Sun, LayoutDashboard } from 'lucide-react';
 
 export function Layout() {
-  const { prompts, currentPrompt, selectPrompt, createPrompt, user, logout } = useStore();
-  const [theme, setTheme] = React.useState('dark');
+  const { prompts, currentPrompt, selectPrompt, createPrompt, user, logout, theme, toggleTheme } = useStore();
   const [showSettings, setShowSettings] = React.useState(false);
-
-  React.useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
-  }, [theme]);
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 transition-colors">
@@ -46,7 +41,7 @@ export function Layout() {
 
         <div className="flex items-center gap-4">
           <button 
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            onClick={toggleTheme}
             className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -84,15 +79,15 @@ export function Layout() {
           <PromptEditor />
         </div>
 
-        {/* Middle Panel: Chat */}
-        <div className="w-1/3 border-r border-slate-200 dark:border-slate-800 flex flex-col bg-white dark:bg-slate-950">
-          <TestChat />
-        </div>
-
-        {/* Right Panel: Evaluation & Improvement */}
-        <div className="w-1/3 flex flex-col overflow-y-auto">
+        {/* Middle Panel: Evaluation & Improvement */}
+        <div className="w-1/3 border-r border-slate-200 dark:border-slate-800 flex flex-col overflow-y-auto">
           <EvaluationPanel />
           <ImprovementChat />
+        </div>
+
+        {/* Right Panel: Chat */}
+        <div className="w-1/3 flex flex-col bg-white dark:bg-slate-950">
+          <TestChat />
         </div>
       </main>
 

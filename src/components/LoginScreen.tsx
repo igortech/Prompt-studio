@@ -1,14 +1,17 @@
 import React from 'react';
 import { Bot } from 'lucide-react';
+import { useStore } from '../store';
 
 export function LoginScreen() {
+  const { addNotification } = useStore();
+
   const handleLogin = async () => {
     try {
       const res = await fetch('/api/auth/url');
       const data = await res.json();
       
       if (!res.ok) {
-        alert(data.error || 'Не удалось инициализировать Google Login. Проверьте конфигурацию.');
+        addNotification('error', data.error || 'Не удалось инициализировать Google Login. Проверьте конфигурацию.');
         return;
       }
       
@@ -20,10 +23,11 @@ export function LoginScreen() {
       );
 
       if (!authWindow) {
-        alert('Пожалуйста, разрешите всплывающие окна для этого сайта, чтобы подключить ваш аккаунт.');
+        addNotification('info', 'Пожалуйста, разрешите всплывающие окна для этого сайта, чтобы подключить ваш аккаунт.');
       }
     } catch (e) {
       console.error('Failed to get auth URL', e);
+      addNotification('error', 'Произошла ошибка при попытке входа');
     }
   };
 

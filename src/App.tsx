@@ -6,12 +6,17 @@
 import React, { useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { LoginScreen } from './components/LoginScreen';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { ToastContainer } from './components/Toast';
 import { useStore } from './store';
 
 export default function App() {
-  const { user, isLoadingAuth, checkAuth } = useStore();
+  const { user, isLoadingAuth, checkAuth, theme, setTheme } = useStore();
 
   useEffect(() => {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    setTheme(savedTheme as 'light' | 'dark');
+    
     checkAuth();
     
     const handleMessage = (event: MessageEvent) => {
@@ -31,13 +36,14 @@ export default function App() {
   }, [checkAuth]);
 
   if (isLoadingAuth) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-500">Загрузка...</div>;
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-500 font-medium">Загрузка...</div>;
   }
 
-  if (!user) {
-    return <LoginScreen />;
-  }
-
-  return <Layout />;
+  return (
+    <ErrorBoundary>
+      {!user ? <LoginScreen /> : <Layout />}
+      <ToastContainer />
+    </ErrorBoundary>
+  );
 }
 

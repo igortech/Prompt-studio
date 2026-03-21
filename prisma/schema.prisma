@@ -20,6 +20,14 @@ model User {
   
   apiKeys       ApiKey[]
   prompts       Prompt[]
+
+  // Global preferences for different tasks
+  testProvider      String?   @default("google")
+  testModel         String?   @default("gemini-3.1-flash-lite-preview")
+  analysisProvider  String?   @default("google")
+  analysisModel     String?   @default("gemini-3-flash-preview")
+  improvementProvider String? @default("google")
+  improvementModel  String?   @default("gemini-3-flash-preview")
 }
 
 model ApiKey {

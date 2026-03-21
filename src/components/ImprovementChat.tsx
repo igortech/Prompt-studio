@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store';
-import { Sparkles, Loader2, Check, X, ArrowRight, Send, Bot, User } from 'lucide-react';
+import { Sparkles, Loader2, Check, X, ArrowRight, Send, Bot, User, Split, FileText } from 'lucide-react';
 import Markdown from 'react-markdown';
+import { DiffView } from './DiffView';
 
 export function ImprovementChat() {
-  const { improvementMessages, sendImprovementMessage, isImproving, currentPrompt, updatePrompt, improvePrompt, evaluation } = useStore();
+  const { improvementMessages, sendImprovementMessage, isImproving, currentPrompt, updatePrompt, improvePrompt, evaluation, addNotification } = useStore();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -24,8 +25,13 @@ export function ImprovementChat() {
     if (msg === '/apply') {
       const lastChange = [...improvementMessages].reverse().find(m => m.hasChanges && m.improvedPrompt);
       if (lastChange && lastChange.improvedPrompt) {
-        await updatePrompt(currentPrompt.id, { content: lastChange.improvedPrompt });
+        await updatePrompt(currentPrompt.id, { 
+          content: lastChange.improvedPrompt,
+          changeNote: lastChange.diffSummary || 'Применены предложения ИИ'
+        });
+        addNotification('success', 'Изменения применены');
       }
+      return;
     }
 
     await sendImprovementMessage(msg);
@@ -68,7 +74,13 @@ export function ImprovementChat() {
           </div>
         ) : (
           improvementMessages.map((msg, i) => (
-            <ImprovementMessageBubble key={msg.id || i} message={msg} currentPromptId={currentPrompt.id} updatePrompt={updatePrompt} />
+            <ImprovementMessageBubble 
+              key={msg.id || i} 
+              message={msg} 
+              currentPrompt={currentPrompt} 
+              updatePrompt={updatePrompt} 
+              addNotification={addNotification}
+            />
           ))
         )}
         
@@ -108,13 +120,14 @@ export function ImprovementChat() {
   );
 }
 
-function ImprovementMessageBubble({ message, currentPromptId, updatePrompt }: { message: any, currentPromptId: string, updatePrompt: any }) {
+function ImprovementMessageBubble({ message, currentPrompt, updatePrompt, addNotification }: { message: any, currentPrompt: any, updatePrompt: any, addNotification: any }) {
   const isUser = message.role === 'user';
   const [applied, setApplied] = useState(false);
+  const [showDiff, setShowDiff] = useState(true);
 
   return (
     <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
-      <div className={`flex gap-3 max-w-[90%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      <div className={`flex gap-3 max-w-[95%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
         <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isUser ? 'bg-indigo-500' : 'bg-amber-500'}`}>
           {isUser ? <User className="w-5 h-5 text-white" /> : <Sparkles className="w-5 h-5 text-white" />}
         </div>
@@ -127,35 +140,62 @@ function ImprovementMessageBubble({ message, currentPromptId, updatePrompt }: { 
           </div>
           
           {!isUser && message.hasChanges && message.improvedPrompt && (
-            <div className="mt-2 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800/30 w-full">
-              <h4 className="font-bold text-indigo-900 dark:text-indigo-300 mb-2 text-sm flex items-center gap-2">
-                <Sparkles className="w-4 h-4" /> Предложенные изменения
-              </h4>
+            <div className="mt-2 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800/30 w-full shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-bold text-indigo-900 dark:text-indigo-300 text-sm flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" /> Предложенные изменения
+                </h4>
+                <div className="flex bg-white/50 dark:bg-black/20 rounded-lg p-0.5">
+                  <button 
+                    onClick={() => setShowDiff(false)}
+                    className={`p-1 rounded transition-colors ${!showDiff ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}
+                    title="Показать текст"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                  </button>
+                  <button 
+                    onClick={() => setShowDiff(true)}
+                    className={`p-1 rounded transition-colors ${showDiff ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}
+                    title="Показать отличия"
+                  >
+                    <Split className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
               
               {message.diffSummary && (
-                <p className="text-xs text-indigo-800 dark:text-indigo-400 mb-3">{message.diffSummary}</p>
+                <div className="bg-white/40 dark:bg-black/10 rounded p-2 mb-3 border border-indigo-100/50 dark:border-indigo-900/30">
+                  <p className="text-[11px] text-indigo-800 dark:text-indigo-400 font-medium">{message.diffSummary}</p>
+                </div>
               )}
               
-              <div className="relative">
-                <pre className="text-xs font-mono whitespace-pre-wrap text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-950 p-3 rounded border border-indigo-100 dark:border-indigo-800/30 mb-4 max-h-60 overflow-y-auto">
-                  {message.improvedPrompt}
-                </pre>
+              <div className="relative mb-4">
+                <div className="max-h-80 overflow-y-auto rounded-lg border border-indigo-100 dark:border-indigo-800/30">
+                  {showDiff ? (
+                    <DiffView oldText={currentPrompt.content} newText={message.improvedPrompt} />
+                  ) : (
+                    <pre className="text-xs font-mono whitespace-pre-wrap text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-950 p-3">
+                      {message.improvedPrompt}
+                    </pre>
+                  )}
+                </div>
               </div>
               
               <div className="flex justify-end gap-2">
                 <button 
                   onClick={async () => {
-                    await updatePrompt(currentPromptId, { 
+                    await updatePrompt(currentPrompt.id, { 
                       content: message.improvedPrompt,
                       changeNote: message.diffSummary || 'Применены предложения ИИ'
                     });
                     setApplied(true);
+                    addNotification('success', 'Промпт успешно обновлен');
                   }}
                   disabled={applied}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm transition-colors ${
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
                     applied 
                       ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 cursor-default' 
-                      : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md hover:shadow-lg active:scale-95'
                   }`}
                 >
                   {applied ? <><Check className="w-4 h-4" /> Применено</> : <><Check className="w-4 h-4" /> Применить изменения</>}
