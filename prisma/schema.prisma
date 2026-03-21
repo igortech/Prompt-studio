@@ -1,0 +1,153 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  picture       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  apiKeys       ApiKey[]
+  prompts       Prompt[]
+}
+
+model ApiKey {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  provider      String    // "google" | "ollama"
+  encryptedKey  String    // AES-256-GCM encrypted
+  keyIv         String    // Initialization vector
+  endpoint      String?   // Only for Ollama
+  
+  // Usage settings
+  testModel     String?
+  analysisModel String?
+  improvementModel String?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([userId, provider])
+}
+
+model Prompt {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name          String
+  description   String?
+  content       String    // Current prompt content
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  versions      PromptVersion[]
+  messages      Message[]
+  tests         Test[]
+  testCases     TestCase[]
+}
+
+model TestCase {
+  id            String    @id @default(uuid())
+  promptId      String
+  prompt        Prompt    @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  
+  input         String    // The user input/variables
+  expectedOutput String?  // Optional expected output or criteria
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model PromptVersion {
+  id            String    @id @default(uuid())
+  promptId      String
+  prompt        Prompt    @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  
+  version       Int
+  content       String
+  changeNote    String?
+  
+  createdAt     DateTime  @default(now())
+  
+  @@unique([promptId, version])
+}
+
+model Message {
+  id            String    @id @default(uuid())
+  promptId      String
+  prompt        Prompt    @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  
+  role          String    // "user" | "assistant" | "system"
+  content       String
+  
+  model         String?
+  provider      String?
+  
+  promptTokens  Int?
+  completionTokens Int?
+  totalTokens   Int?
+  latencyMs     Int?
+  
+  debugInfo     String?   // JSON column for debug data
+  
+  createdAt     DateTime  @default(now())
+  
+  @@index([promptId, createdAt])
+}
+
+model Test {
+  id            String    @id @default(uuid())
+  promptId      String
+  prompt        Prompt    @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  
+  type          String    // "quick" | "full" | "auto"
+  
+  parameters    String    // JSON: test parameters
+  results       String?   // JSON: test results
+  recommendations String? // JSON: generated recommendations
+  
+  status        String    // "pending" | "running" | "completed" | "failed"
+  
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+  
+  @@index([promptId, createdAt])
+}
+
+model TestScenario {
+  id            String    @id @default(uuid())
+  testId        String
+  
+  input         String
+  expectedOutput String?
+  actualOutput  String?
+  
+  evaluation    String?   // JSON: evaluation results
+  
+  createdAt     DateTime  @default(now())
+}
+
+model CleanupJob {
+  id            String    @id @default(uuid())
+  type          String    // "messages_30_days"
+  status        String    // "pending" | "running" | "completed"
+  deletedCount  Int       @default(0)
+  
+  startedAt     DateTime?
+  completedAt   DateTime?
+}

@@ -1,0 +1,145 @@
+import express from 'express';
+import jwt from 'jsonwebtoken';
+import { PrismaClient } from '@prisma/client';
+import { requireAuth } from '../middleware/auth.js';
+import { encryptKey } from '../services/crypto.js';
+
+const router = express.Router();
+const prisma = new PrismaClient();
+const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-for-dev';
+
+router.get('/url', (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    return res.status(400).json({ error: 'Google OAuth Client ID is not configured in AI Studio Secrets.' });
+  }
+  const redirectUri = `${process.env.APP_URL}/auth/callback`;
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    access_type: 'offline',
+    prompt: 'consent'
+  });
+  res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params}` });
+});
+
+router.get('/callback', async (req, res) => {
+  const { code } = req.query;
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const redirectUri = `${process.env.APP_URL}/auth/callback`;
+
+  if (!clientId || !clientSecret) {
+    return res.status(500).send('OAuth credentials not configured');
+  }
+
+  try {
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code: code as string,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri
+      })
+    });
+    const tokenData = await tokenRes.json();
+
+    if (tokenData.error) {
+      throw new Error(tokenData.error_description || tokenData.error);
+    }
+
+    const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+    });
+    const userData = await userRes.json();
+
+    let user = await prisma.user.findUnique({ where: { email: userData.email } });
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: userData.email,
+          name: userData.name,
+          picture: userData.picture
+        }
+      });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, name: user.name, picture: user.picture },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    res.send(`
+      <html>
+        <body>
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', token: '${token}' }, '*');
+              window.close();
+            } else {
+              window.location.href = '/';
+            }
+          </script>
+          <p>Authentication successful. This window should close automatically.</p>
+        </body>
+      </html>
+    `);
+  } catch (error: any) {
+    console.error('OAuth error:', error);
+    res.status(500).send(`Authentication failed: ${error.message}`);
+  }
+});
+
+router.get('/me', requireAuth, async (req: any, res) => {
+  const { id, email, name, picture } = req.user;
+  const apiKeys = await prisma.apiKey.findMany({ where: { userId: id } });
+  const hasGeminiKey = apiKeys.some((k: any) => k.provider === 'google');
+  const hasOllamaKey = apiKeys.some((k: any) => k.provider === 'ollama');
+  res.json({ id, email, name, picture, hasGeminiKey, hasOllamaKey });
+});
+
+router.post('/logout', (req, res) => {
+  res.clearCookie('token', { httpOnly: true, secure: true, sameSite: 'none' });
+  res.json({ success: true });
+});
+
+router.post('/settings', requireAuth, async (req: any, res) => {
+  const { geminiKey, ollamaKey } = req.body;
+  
+  const updateKey = async (provider: string, key: string | undefined) => {
+    if (key === undefined) return;
+    if (key === '') {
+      await prisma.apiKey.deleteMany({ where: { userId: req.user.id, provider } });
+      return;
+    }
+    const { encryptedKey, keyIv } = encryptKey(key);
+    await prisma.apiKey.upsert({
+      where: { userId_provider: { userId: req.user.id, provider } },
+      update: { encryptedKey, keyIv },
+      create: { userId: req.user.id, provider, encryptedKey, keyIv }
+    });
+  };
+
+  try {
+    await updateKey('google', geminiKey);
+    await updateKey('ollama', ollamaKey);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+export default router;
