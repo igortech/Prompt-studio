@@ -13,6 +13,7 @@ datasource db {
 model User {
   id            String    @id @default(uuid())
   email         String    @unique
+  password      String?
   name          String?
   picture       String?
   createdAt     DateTime  @default(now())
@@ -59,6 +60,10 @@ model Prompt {
   name          String
   description   String?
   content       String    // Current prompt content
+  analysis      String?   // JSON string of the latest analysis
+  
+  autoCleanup   Boolean   @default(false)
+  cleanupDays   Int       @default(30)
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -89,6 +94,7 @@ model PromptVersion {
   version       Int
   content       String
   changeNote    String?
+  analysis      String?   // JSON string of the analysis for this version
   
   createdAt     DateTime  @default(now())
   

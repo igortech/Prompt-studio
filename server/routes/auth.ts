@@ -1,5 +1,6 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { encryptKey, getDecryptedKey } from '../services/crypto.js';
@@ -100,6 +101,97 @@ router.get('/callback', async (req, res) => {
   } catch (error: any) {
     console.error('OAuth error:', error);
     res.status(500).send(`Authentication failed: ${error.message}`);
+  }
+});
+
+router.post('/register', async (req, res) => {
+  const { email, password, name } = req.body;
+  console.log('Register attempt for:', email);
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  try {
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      console.log('User already exists:', email);
+      return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
+    }
+
+    console.log('Hashing password for:', email);
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    console.log('Creating user in DB:', email);
+    const user = await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        name
+      }
+    });
+
+    console.log('User created successfully:', user.id);
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, name: user.name, picture: user.picture },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+  console.log('Login attempt for:', email);
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || !user.password) {
+      console.log('User not found or no password:', email);
+      return res.status(401).json({ error: 'Неверный email или пароль' });
+    }
+
+    console.log('Comparing password for:', email);
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      console.log('Password mismatch for:', email);
+      return res.status(401).json({ error: 'Неверный email или пароль' });
+    }
+
+    console.log('Login successful for:', email);
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, name: user.name, picture: user.picture },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 

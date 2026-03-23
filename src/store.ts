@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { GoogleGenAI } from '@google/genai';
+import { getAnalysisPrompt, getImprovePrompt, getChatSystemInstruction, getEvalPrompt } from './prompts/systemPrompts';
 
 const apiFetch = async (url: string, options: RequestInit = {}) => {
   const token = localStorage.getItem('token');
@@ -48,6 +50,7 @@ export type PromptVersion = {
   version: number;
   content: string;
   changeNote: string | null;
+  analysis?: string | null;
   createdAt: string;
 };
 
@@ -56,6 +59,9 @@ export type Prompt = {
   name: string;
   description: string | null;
   content: string;
+  analysis?: string | null;
+  autoCleanup?: boolean;
+  cleanupDays?: number;
   createdAt: string;
   updatedAt: string;
   versions?: PromptVersion[];
@@ -149,11 +155,13 @@ type Store = {
   recommendations: any | null;
   notifications: Notification[];
   theme: 'light' | 'dark';
+  activeMiddleTab: 'improvement' | 'analysis' | 'testing' | 'history';
   
   checkAuth: () => Promise<void>;
   logout: () => Promise<void>;
   toggleTheme: () => void;
   setTheme: (theme: 'light' | 'dark') => void;
+  setActiveMiddleTab: (tab: 'improvement' | 'analysis' | 'testing' | 'history') => void;
   updateSettings: (settings: {
     geminiKey?: string;
     ollamaKey?: string;
@@ -169,6 +177,9 @@ type Store = {
   createPrompt: (data: Partial<Prompt>) => Promise<void>;
   updatePrompt: (id: string, data: Partial<Prompt> & { saveVersion?: boolean; changeNote?: string }) => Promise<void>;
   selectPrompt: (id: string) => Promise<void>;
+  deletePrompt: (id: string) => Promise<void>;
+  exportPrompt: (id: string) => Promise<void>;
+  importPrompt: (file: File) => Promise<void>;
   
   sendMessage: (content: string, parameters?: any, provider?: string, model?: string) => Promise<void>;
   sendImprovementMessage: (content: string) => Promise<void>;
@@ -179,8 +190,14 @@ type Store = {
   createTestCase: (data: Partial<TestCase>) => Promise<void>;
   updateTestCase: (id: string, data: Partial<TestCase>) => Promise<void>;
   deleteTestCase: (id: string) => Promise<void>;
+  generateScenarios: (count?: number) => Promise<void>;
+  generatePromptFromFields: (fields: any) => Promise<any>;
+  extractFieldsFromText: (text: string) => Promise<any>;
+  extractMetadataFromPrompt: (text: string) => Promise<any>;
+  testApiKey: (provider: string, key: string) => Promise<boolean>;
   runTests: (versionId?: string) => Promise<void>;
   runSingleTest: (testCaseId: string, versionId?: string) => Promise<void>;
+  replayHistory: (versionId?: string) => Promise<void>;
   
   addNotification: (type: Notification['type'], message: string) => void;
   removeNotification: (id: string) => void;
@@ -202,6 +219,7 @@ export const useStore = create<Store>((set, get) => ({
   recommendations: null,
   notifications: [],
   theme: (localStorage.getItem('theme') as 'light' | 'dark') || 'dark',
+  activeMiddleTab: 'analysis',
 
   addNotification: (type, message) => {
     const id = Date.now().toString();
@@ -230,11 +248,17 @@ export const useStore = create<Store>((set, get) => ({
     document.documentElement.classList.toggle('dark', theme === 'dark');
   },
 
+  setActiveMiddleTab: (tab) => set({ activeMiddleTab: tab }),
+
   checkAuth: async () => {
     try {
       const user = await apiFetch('/api/auth/me');
+      try {
+        await get().fetchPrompts();
+      } catch (e) {
+        console.error('Failed to fetch prompts during auth check:', e);
+      }
       set({ user, isLoadingAuth: false });
-      get().fetchPrompts();
     } catch (e) {
       set({ user: null, isLoadingAuth: false });
     }
@@ -278,8 +302,6 @@ export const useStore = create<Store>((set, get) => ({
       set({ prompts: data });
       if (data.length > 0 && !get().currentPrompt) {
         get().selectPrompt(data[0].id);
-      } else if (data.length === 0) {
-        get().createPrompt({ name: 'My First Prompt', content: 'You are a helpful assistant.' });
       }
     } catch (e: any) {
       get().addNotification('error', e.message || 'Не удалось загрузить промпты');
@@ -331,10 +353,81 @@ export const useStore = create<Store>((set, get) => ({
       const prompt = await apiFetch(`/api/prompts/${id}`);
       const messages = await apiFetch(`/api/chat/prompt/${id}`);
       
-      set({ currentPrompt: prompt, messages, improvementMessages: [], evaluation: null, recommendations: null, testResults: null });
+      let evaluation = null;
+      if (prompt.analysis) {
+        try {
+          evaluation = typeof prompt.analysis === 'string' ? JSON.parse(prompt.analysis) : prompt.analysis;
+        } catch (e) {
+          console.error('Failed to parse analysis JSON', e);
+        }
+      }
+      
+      set({ currentPrompt: prompt, messages, improvementMessages: [], evaluation, recommendations: null, testResults: null });
       get().fetchTestCases();
     } catch (e: any) {
       get().addNotification('error', e.message || 'Не удалось выбрать промпт');
+    }
+  },
+
+  deletePrompt: async (id) => {
+    try {
+      await apiFetch(`/api/prompts/${id}`, {
+        method: 'DELETE',
+      });
+      
+      set((state) => {
+        const newPrompts = state.prompts.filter((p) => p.id !== id);
+        const nextPrompt = newPrompts.length > 0 ? newPrompts[0] : null;
+        return {
+          prompts: newPrompts,
+          currentPrompt: state.currentPrompt?.id === id ? null : state.currentPrompt
+        };
+      });
+      
+      if (get().currentPrompt === null && get().prompts.length > 0) {
+        get().selectPrompt(get().prompts[0].id);
+      }
+      
+      get().addNotification('success', 'Промпт удален');
+    } catch (e: any) {
+      get().addNotification('error', e.message || 'Не удалось удалить промпт');
+    }
+  },
+
+  exportPrompt: async (id) => {
+    try {
+      const data = await apiFetch(`/api/prompts/${id}/export`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `prompt_${data.prompt.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      get().addNotification('success', 'Промпт успешно экспортирован');
+    } catch (e: any) {
+      get().addNotification('error', e.message || 'Не удалось экспортировать промпт');
+    }
+  },
+
+  importPrompt: async (file) => {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      const newPrompt = await apiFetch('/api/prompts/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      
+      await get().fetchPrompts();
+      await get().selectPrompt(newPrompt.id);
+      get().addNotification('success', 'Промпт успешно импортирован');
+    } catch (e: any) {
+      get().addNotification('error', e.message || 'Не удалось импортировать промпт');
     }
   },
 
@@ -369,8 +462,8 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   sendImprovementMessage: async (content) => {
-    const { currentPrompt, improvementMessages } = get();
-    if (!currentPrompt) return;
+    const { currentPrompt, improvementMessages, user, testCases, evaluation } = get();
+    if (!currentPrompt || !user) return;
 
     const tempId = Date.now().toString();
     set((state) => ({
@@ -379,12 +472,47 @@ export const useStore = create<Store>((set, get) => ({
     }));
 
     try {
+      const provider = user.improvementProvider || 'google';
+      const model = user.improvementModel || 'gemini-3-flash-preview';
       const history = improvementMessages.map(m => ({ role: m.role, content: m.content }));
-      const data = await apiFetch(`/api/prompts/${currentPrompt.id}/improvement-chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: content, history }),
-      });
+
+      let data;
+      if (provider === 'google') {
+        const keys = await apiFetch('/api/auth/keys');
+        const apiKey = keys.google;
+        if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
+
+        // Get recent test cases for context
+        const recentTestCases = testCases.slice(-5);
+        const systemInstruction = getChatSystemInstruction(currentPrompt.content, recentTestCases, evaluation);
+
+        const ai = new GoogleGenAI({ apiKey });
+        const response = await ai.models.generateContent({
+          model,
+          contents: [
+            ...history.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+            { role: 'user', parts: [{ text: content }] }
+          ],
+          config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+          }
+        });
+        
+        const result = JSON.parse(response.text || '{}');
+        data = {
+          text: result.message,
+          has_changes: result.action === 'suggest' || result.action === 'apply',
+          improved_prompt: result.full_prompt_preview,
+          diff_summary: result.suggested_changes?.reasoning || 'AI suggestions'
+        };
+      } else {
+        data = await apiFetch(`/api/prompts/${currentPrompt.id}/improvement-chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: content, history }),
+        });
+      }
       
       set((state) => ({
         improvementMessages: [...state.improvementMessages, {
@@ -406,13 +534,39 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   analyzePrompt: async () => {
-    const { currentPrompt } = get();
-    if (!currentPrompt) return;
+    const { currentPrompt, user } = get();
+    if (!currentPrompt || !user) return;
     
     set({ isAnalyzing: true });
     try {
-      const data = await apiFetch(`/api/prompts/${currentPrompt.id}/analyze`, { method: 'POST' });
-      set({ evaluation: data });
+      const provider = user.analysisProvider || 'google';
+      const model = user.analysisModel || 'gemini-3-flash-preview';
+
+      if (provider === 'google') {
+        const keys = await apiFetch('/api/auth/keys');
+        const apiKey = keys.google;
+        if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
+
+        const history = get().messages.slice(-10);
+        const analysisPrompt = getAnalysisPrompt(currentPrompt.content, history);
+
+        const ai = new GoogleGenAI({ apiKey });
+        const response = await ai.models.generateContent({
+          model,
+          contents: analysisPrompt,
+          config: { responseMimeType: 'application/json' }
+        });
+        
+        const data = JSON.parse(response.text || '{}');
+        set({ evaluation: data });
+        // Save analysis to the backend
+        await get().updatePrompt(currentPrompt.id, { analysis: data });
+      } else {
+        const data = await apiFetch(`/api/prompts/${currentPrompt.id}/analyze`, { method: 'POST' });
+        set({ evaluation: data });
+        // Save analysis to the backend
+        await get().updatePrompt(currentPrompt.id, { analysis: data });
+      }
     } catch (e: any) {
       console.error(e);
       get().addNotification('error', e.message || 'Не удалось проанализировать промпт');
@@ -422,19 +576,38 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   improvePrompt: async () => {
-    const { currentPrompt, evaluation } = get();
-    if (!currentPrompt) return;
+    const { currentPrompt, evaluation, user } = get();
+    if (!currentPrompt || !user) return;
     
     set({ isImproving: true });
     try {
-      const data = await apiFetch(`/api/prompts/${currentPrompt.id}/improve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ analysisResult: evaluation }),
-      });
+      const provider = user.improvementProvider || 'google';
+      const model = user.improvementModel || 'gemini-3-flash-preview';
+
+      let data;
+      if (provider === 'google') {
+        const keys = await apiFetch('/api/auth/keys');
+        const apiKey = keys.google;
+        if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
+
+        const improvePrompt = getImprovePrompt(currentPrompt.content, evaluation);
+        const ai = new GoogleGenAI({ apiKey });
+        const response = await ai.models.generateContent({
+          model,
+          contents: improvePrompt,
+          config: { responseMimeType: 'application/json' }
+        });
+        data = JSON.parse(response.text || '{}');
+      } else {
+        data = await apiFetch(`/api/prompts/${currentPrompt.id}/improve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ analysisResult: evaluation }),
+        });
+      }
       
       // Convert the old recommendations format into a chat message
-      const content = `Here is my analysis and suggestions for improvement:\n\n**Analysis:** ${data.analysis}\n\n**Suggestions:**\n${data.suggestions?.map((s: any) => `- **${s.priority.toUpperCase()} Priority**: ${s.diff}\n  *Reasoning*: ${s.reasoning}\n  *Expected Effect*: ${s.expected_effect}`).join('\n')}\n\n**Risks:**\n${data.risks?.map((r: string) => `- ${r}`).join('\n')}`;
+      const content = `Вот мой анализ и предложения по улучшению:\n\n**Анализ:** ${data.analysis}\n\n**Предложения:**\n${data.suggestions?.map((s: any) => `- **${s.priority === 'high' ? 'Высокий' : s.priority === 'medium' ? 'Средний' : 'Низкий'} приоритет**: ${s.diff}\n  *Обоснование*: ${s.reasoning}\n  *Ожидаемый эффект*: ${s.expected_effect}`).join('\n')}\n\n**Риски:**\n${data.risks?.map((r: string) => `- ${r}`).join('\n')}`;
 
       set((state) => ({
         improvementMessages: [...state.improvementMessages, {
@@ -510,6 +683,129 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
+  generateScenarios: async (count = 5) => {
+    const { currentPrompt } = get();
+    if (!currentPrompt) return;
+    set({ isTesting: true });
+    try {
+      const newTestCases = await apiFetch(`/api/test-cases/prompt/${currentPrompt.id}/generate-scenarios`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenarioCount: count }),
+      });
+      set((state) => ({ testCases: [...state.testCases, ...newTestCases] }));
+      get().addNotification('success', `Сгенерировано ${newTestCases.length} новых сценариев`);
+    } catch (e: any) {
+      console.error(e);
+      get().addNotification('error', e.message || 'Не удалось сгенерировать сценарии');
+    } finally {
+      set({ isTesting: false });
+    }
+  },
+
+  generatePromptFromFields: async (fields: any) => {
+    const { user } = get();
+    if (!user) return;
+    
+    try {
+      const keys = await apiFetch('/api/auth/keys');
+      const apiKey = keys.google;
+      if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
+
+      const { getPromptGenerationPrompt } = await import('./prompts/systemPrompts');
+      const prompt = getPromptGenerationPrompt(fields);
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: { responseMimeType: 'application/json' }
+      });
+      
+      return JSON.parse(response.text || '{}');
+    } catch (e: any) {
+      console.error(e);
+      get().addNotification('error', e.message || 'Не удалось сгенерировать промпт');
+      return null;
+    }
+  },
+
+  extractFieldsFromText: async (text: string) => {
+    const { user } = get();
+    if (!user) return;
+    
+    try {
+      const keys = await apiFetch('/api/auth/keys');
+      const apiKey = keys.google;
+      if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
+
+      const { getPromptExtractionPrompt } = await import('./prompts/systemPrompts');
+      const prompt = getPromptExtractionPrompt(text);
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: { responseMimeType: 'application/json' }
+      });
+      
+      return JSON.parse(response.text || '{}');
+    } catch (e: any) {
+      console.error(e);
+      get().addNotification('error', e.message || 'Не удалось извлечь поля из текста');
+      return null;
+    }
+  },
+
+  extractMetadataFromPrompt: async (text: string) => {
+    const { user } = get();
+    if (!user) return;
+    
+    try {
+      const keys = await apiFetch('/api/auth/keys');
+      const apiKey = keys.google;
+      if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
+
+      const { getPromptMetadataExtractionPrompt } = await import('./prompts/systemPrompts');
+      const prompt = getPromptMetadataExtractionPrompt(text);
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: { responseMimeType: 'application/json' }
+      });
+      
+      return JSON.parse(response.text || '{}');
+    } catch (e: any) {
+      console.error(e);
+      get().addNotification('error', e.message || 'Не удалось извлечь метаданные из промпта');
+      return null;
+    }
+  },
+
+  testApiKey: async (provider: string, key: string) => {
+    try {
+      if (provider === 'google') {
+        const ai = new GoogleGenAI({ apiKey: key });
+        const response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: 'Say "ok"',
+        });
+        return !!response.text;
+      } else if (provider === 'ollama') {
+        // Simple health check for Ollama Cloud if we have an endpoint
+        // For now, we'll just check if it's not empty and assume it's valid if the server accepts it
+        // Or we can try to call a dummy endpoint
+        const response = await fetch('https://api.ollama.com/v1/models', {
+          headers: { 'Authorization': `Bearer ${key}` }
+        });
+        return response.ok;
+      }
+      return false;
+    } catch (e) {
+      console.error('API Key test failed:', e);
+      return false;
+    }
+  },
+
   runTests: async (versionId?: string) => {
     const { currentPrompt } = get();
     if (!currentPrompt) return;
@@ -571,6 +867,29 @@ export const useStore = create<Store>((set, get) => ({
     } catch (e: any) {
       console.error(e);
       get().addNotification('error', e.message || 'Не удалось запустить тест');
+    } finally {
+      set({ isTesting: false });
+    }
+  },
+
+  replayHistory: async (versionId?: string) => {
+    const { currentPrompt } = get();
+    if (!currentPrompt) return;
+    
+    set({ isTesting: true });
+    try {
+      const data = await apiFetch(`/api/chat/prompt/${currentPrompt.id}/replay`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ versionId })
+      });
+      get().addNotification('success', `Успешно воспроизведено ${data.results.length} сообщений`);
+      // We could display the diffs here, but for now just refresh the chat
+      const messages = await apiFetch(`/api/chat/prompt/${currentPrompt.id}`);
+      set({ messages });
+    } catch (e: any) {
+      console.error(e);
+      get().addNotification('error', e.message || 'Не удалось воспроизвести историю');
     } finally {
       set({ isTesting: false });
     }

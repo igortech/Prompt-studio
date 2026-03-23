@@ -39,7 +39,7 @@ router.get('/:id', requireAuth, async (req: any, res) => {
 });
 
 router.put('/:id', requireAuth, async (req: any, res) => {
-  const { name, description, content, saveVersion, changeNote } = req.body;
+  const { name, description, content, saveVersion, changeNote, analysis } = req.body;
   
   const prompt = await prisma.prompt.findUnique({ where: { id: req.params.id } });
   if (!prompt || prompt.userId !== req.user.id) return res.status(404).json({ error: 'Not found' });
@@ -57,16 +57,105 @@ router.put('/:id', requireAuth, async (req: any, res) => {
         promptId: prompt.id,
         version: nextVersion,
         content: prompt.content,
-        changeNote: changeNote || 'Auto-saved before update'
+        changeNote: changeNote || 'Auto-saved before update',
+        analysis: prompt.analysis
       }
     });
   }
 
+  const dataToUpdate: any = { name, description, content };
+  if (analysis !== undefined) {
+    dataToUpdate.analysis = typeof analysis === 'string' ? analysis : JSON.stringify(analysis);
+  }
+
   const updated = await prisma.prompt.update({
     where: { id: req.params.id },
-    data: { name, description, content }
+    data: dataToUpdate,
+    include: { versions: { orderBy: { version: 'desc' } } }
   });
   res.json(updated);
+});
+
+router.get('/:id/export', requireAuth, async (req: any, res) => {
+  const prompt = await prisma.prompt.findUnique({
+    where: { id: req.params.id },
+    include: {
+      versions: true,
+      messages: true,
+      testCases: true
+    }
+  });
+  if (!prompt || prompt.userId !== req.user.id) return res.status(404).json({ error: 'Not found' });
+
+  const exportData = {
+    version: "1.0",
+    exportedAt: new Date().toISOString(),
+    prompt: {
+      name: prompt.name,
+      description: prompt.description,
+      content: prompt.content,
+      createdAt: prompt.createdAt,
+      updatedAt: prompt.updatedAt
+    },
+    history: {
+      messages: prompt.messages,
+      testCases: prompt.testCases,
+      versions: prompt.versions
+    }
+  };
+  res.json(exportData);
+});
+
+router.post('/import', requireAuth, async (req: any, res) => {
+  try {
+    const { prompt, history } = req.body;
+    if (!prompt || !prompt.name || !prompt.content) {
+      return res.status(400).json({ error: 'Invalid import format' });
+    }
+
+    const newPrompt = await prisma.prompt.create({
+      data: {
+        userId: req.user.id,
+        name: prompt.name + ' (Imported)',
+        description: prompt.description,
+        content: prompt.content,
+        versions: {
+          create: history?.versions?.map((v: any) => ({
+            version: v.version,
+            content: v.content,
+            changeNote: v.changeNote,
+            createdAt: v.createdAt
+          })) || []
+        },
+        messages: {
+          create: history?.messages?.map((m: any) => ({
+            role: m.role,
+            content: m.content,
+            model: m.model,
+            provider: m.provider,
+            promptTokens: m.promptTokens,
+            completionTokens: m.completionTokens,
+            totalTokens: m.totalTokens,
+            latencyMs: m.latencyMs,
+            debugInfo: m.debugInfo,
+            createdAt: m.createdAt
+          })) || []
+        },
+        testCases: {
+          create: history?.testCases?.map((tc: any) => ({
+            input: tc.input,
+            expectedOutput: tc.expectedOutput,
+            createdAt: tc.createdAt,
+            updatedAt: tc.updatedAt
+          })) || []
+        }
+      }
+    });
+
+    res.json(newPrompt);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 router.delete('/:id', requireAuth, async (req: any, res) => {

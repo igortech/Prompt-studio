@@ -172,6 +172,91 @@ router.post('/prompt/:promptId', requireAuth, async (req: any, res) => {
   }
 });
 
+router.post('/prompt/:promptId/replay', requireAuth, async (req: any, res) => {
+  try {
+    const promptId = req.params.promptId;
+    const { versionId } = req.body;
+    
+    const prompt = await prisma.prompt.findUnique({ where: { id: promptId } });
+    if (!prompt || prompt.userId !== req.user.id) return res.status(404).json({ error: 'Prompt not found' });
+
+    let promptContent = prompt.content;
+    if (versionId) {
+      const version = await prisma.promptVersion.findUnique({ where: { id: versionId } });
+      if (version && version.promptId === promptId) {
+        promptContent = version.content;
+      }
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const finalProvider = user?.testProvider || 'google';
+    const finalModel = user?.testModel || 'gemini-3.1-flash-lite-preview';
+
+    // Get all user messages
+    const history = await prisma.message.findMany({
+      where: { promptId, role: 'user' },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    if (history.length === 0) {
+      return res.status(400).json({ error: 'No history to replay' });
+    }
+
+    // Delete all existing messages for this prompt
+    await prisma.message.deleteMany({ where: { promptId } });
+
+    const userKey = await getDecryptedKey(req.user.id, 'google');
+    const apiKey = userKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('Google Gemini API key is not configured');
+    const ai = new GoogleGenAI({ apiKey });
+
+    const results = [];
+    const chat = ai.chats.create({
+      model: finalModel,
+      config: { systemInstruction: promptContent }
+    });
+
+    for (const msg of history) {
+      // Recreate user message
+      await prisma.message.create({
+        data: {
+          promptId,
+          role: 'user',
+          content: msg.content
+        }
+      });
+
+      const startTime = Date.now();
+      const response = await chat.sendMessage({ message: msg.content });
+      const latencyMs = Date.now() - startTime;
+      const assistantContent = response.text || '';
+      
+      // Create assistant message
+      await prisma.message.create({
+        data: {
+          promptId,
+          role: 'assistant',
+          content: assistantContent,
+          model: finalModel,
+          provider: finalProvider,
+          latencyMs
+        }
+      });
+
+      results.push({
+        originalMessage: msg.content,
+        newResponse: assistantContent,
+        latencyMs
+      });
+    }
+
+    res.json({ success: true, results });
+  } catch (error: any) {
+    console.error('Replay error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.delete('/prompt/:promptId', requireAuth, async (req: any, res) => {
   const prompt = await prisma.prompt.findUnique({ where: { id: req.params.promptId } });
   if (!prompt || prompt.userId !== req.user.id) return res.status(404).json({ error: 'Not found' });

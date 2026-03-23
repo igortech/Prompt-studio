@@ -2,11 +2,76 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.js';
 import { getDecryptedKey } from '../services/crypto.js';
-import { GoogleGenAI } from '@google/genai';
-import { getEvalPrompt } from '../prompts/systemPrompts.js';
+import { GoogleGenAI, Type } from '@google/genai';
+import { getEvalPrompt, getTestingPrompt } from '../prompts/systemPrompts.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+router.post('/prompt/:promptId/generate-scenarios', requireAuth, async (req: any, res) => {
+  try {
+    const { scenarioCount = 5 } = req.body;
+    const promptId = req.params.promptId;
+    
+    const prompt = await prisma.prompt.findUnique({ where: { id: promptId } });
+    if (!prompt || prompt.userId !== req.user.id) return res.status(404).json({ error: 'Prompt not found' });
+
+    const userKey = await getDecryptedKey(req.user.id, 'google');
+    const apiKey = userKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('Google Gemini API key is not configured');
+    const ai = new GoogleGenAI({ apiKey });
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const model = user?.analysisModel || 'gemini-3-flash-preview';
+
+    const systemInstruction = getTestingPrompt(prompt.content, scenarioCount);
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: 'Сгенерируй тестовые сценарии.',
+      config: {
+        systemInstruction,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              type: { type: Type.STRING },
+              description: { type: Type.STRING },
+              input: { type: Type.STRING },
+              expected_aspects: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              }
+            },
+            required: ['type', 'description', 'input', 'expected_aspects']
+          }
+        }
+      }
+    });
+
+    const text = response.text || '[]';
+    const scenarios = JSON.parse(text);
+
+    const createdTestCases = [];
+    for (const scenario of scenarios) {
+      const tc = await prisma.testCase.create({
+        data: {
+          promptId,
+          input: scenario.input,
+          expectedOutput: scenario.expected_aspects.join(', ')
+        }
+      });
+      createdTestCases.push(tc);
+    }
+
+    res.json(createdTestCases);
+  } catch (error: any) {
+    console.error('Generate scenarios error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 router.get('/prompt/:promptId', requireAuth, async (req: any, res) => {
   const prompt = await prisma.prompt.findUnique({ where: { id: req.params.promptId } });

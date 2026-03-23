@@ -1,20 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store';
-import { Send, Bot, User, Code, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { Send, Bot, User, Code, ChevronDown, ChevronUp, Loader2, RotateCcw } from 'lucide-react';
 import Markdown from 'react-markdown';
+import { GOOGLE_MODELS, OLLAMA_MODELS } from '../constants/models';
 
 export function TestChat() {
-  const { messages, sendMessage, currentPrompt, user } = useStore();
+  const { messages, sendMessage, currentPrompt, user, replayHistory, isTesting } = useStore();
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [provider, setProvider] = useState(user?.testProvider || 'google');
-  const [model, setModel] = useState(user?.testModel || 'gemini-3.1-flash-lite-preview');
+  const [model, setModel] = useState(user?.testModel || GOOGLE_MODELS[0].id);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (user) {
       setProvider(user.testProvider || 'google');
-      setModel(user.testModel || 'gemini-3.1-flash-lite-preview');
+      setModel(user.testModel || (user.testProvider === 'ollama' ? OLLAMA_MODELS[0].id : GOOGLE_MODELS[0].id));
     }
   }, [user]);
 
@@ -37,16 +38,30 @@ export function TestChat() {
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900 border-x border-slate-200 dark:border-slate-800">
       <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-950">
-        <h2 className="font-semibold flex items-center gap-2">
-          <Bot className="w-5 h-5 text-indigo-500" />
-          Тестовый чат
-        </h2>
+        <div className="flex items-center gap-4">
+          <h2 className="font-semibold flex items-center gap-2">
+            <Bot className="w-5 h-5 text-indigo-500" />
+            Тестовый чат
+          </h2>
+          {messages.length > 0 && (
+            <button
+              onClick={() => replayHistory()}
+              disabled={isTesting || isSending}
+              className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 flex items-center gap-1 text-sm disabled:opacity-50"
+              title="Перетестировать историю с текущим промптом"
+            >
+              <RotateCcw className={`w-4 h-4 ${isTesting ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Перетестировать</span>
+            </button>
+          )}
+        </div>
         <div className="flex gap-2 text-sm">
           <select 
             value={provider}
             onChange={e => {
-              setProvider(e.target.value);
-              setModel(e.target.value === 'google' ? 'gemini-3-flash-preview' : 'llama3');
+              const newProvider = e.target.value;
+              setProvider(newProvider);
+              setModel(newProvider === 'google' ? GOOGLE_MODELS[0].id : OLLAMA_MODELS[0].id);
             }}
             className="bg-slate-100 dark:bg-slate-800 border-none rounded px-2 py-1 outline-none"
           >
@@ -58,18 +73,9 @@ export function TestChat() {
             onChange={e => setModel(e.target.value)}
             className="bg-slate-100 dark:bg-slate-800 border-none rounded px-2 py-1 outline-none"
           >
-            {provider === 'google' ? (
-              <>
-                <option value="gemini-3-flash-preview">gemini-3-flash-preview</option>
-                <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview</option>
-              </>
-            ) : (
-              <>
-                <option value="llama3">llama3</option>
-                <option value="mistral">mistral</option>
-                <option value="gemma">gemma</option>
-              </>
-            )}
+            {(provider === 'google' ? GOOGLE_MODELS : OLLAMA_MODELS).map(m => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
           </select>
         </div>
       </div>

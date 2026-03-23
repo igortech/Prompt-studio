@@ -1,21 +1,49 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store';
-import { Sparkles, Loader2, Check, X, ArrowRight, Send, Bot, User, Split, FileText } from 'lucide-react';
+import { Sparkles, Loader2, Check, X, ArrowRight, Send, Bot, User, Split, FileText, ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { DiffView } from './DiffView';
+import { motion, AnimatePresence } from 'motion/react';
 
-export function ImprovementChat() {
-  const { improvementMessages, sendImprovementMessage, isImproving, currentPrompt, updatePrompt, improvePrompt, evaluation, addNotification } = useStore();
+export function ImprovementChat({ hideHeader = false, floating = false }: { hideHeader?: boolean, floating?: boolean }) {
+  const { improvementMessages, sendImprovementMessage, isImproving, currentPrompt, updatePrompt, improvePrompt, evaluation, addNotification, activeMiddleTab, setActiveMiddleTab } = useStore();
   const [input, setInput] = useState('');
+  const [isExpanded, setIsExpanded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [improvementMessages, isImproving]);
+    if (activeMiddleTab === 'improvement' && floating) {
+      setIsExpanded(true);
+    }
+  }, [activeMiddleTab, floating]);
+
+  useEffect(() => {
+    if (isExpanded) {
+      scrollToBottom();
+    }
+  }, [improvementMessages, isImproving, isExpanded]);
+
+  // Close on click outside if floating
+  useEffect(() => {
+    if (!floating || !isExpanded) return;
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsExpanded(false);
+        if (activeMiddleTab === 'improvement') {
+          useStore.getState().setActiveMiddleTab('analysis');
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [floating, isExpanded, activeMiddleTab]);
 
   const handleSend = async () => {
     if (!input.trim() || !currentPrompt) return;
@@ -27,9 +55,14 @@ export function ImprovementChat() {
       if (lastChange && lastChange.improvedPrompt) {
         await updatePrompt(currentPrompt.id, { 
           content: lastChange.improvedPrompt,
+          saveVersion: true,
           changeNote: lastChange.diffSummary || 'Применены предложения ИИ'
         });
         addNotification('success', 'Изменения применены');
+        setIsExpanded(false);
+        if (activeMiddleTab === 'improvement') {
+          setActiveMiddleTab('analysis');
+        }
       }
       return;
     }
@@ -39,59 +72,134 @@ export function ImprovementChat() {
 
   if (!currentPrompt) return null;
 
-  return (
-    <div className="flex flex-col flex-1 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800">
-      <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-950">
-        <h2 className="font-semibold flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-indigo-500" />
-          Чат улучшений
-        </h2>
-        <button
-          onClick={improvePrompt}
-          disabled={isImproving || !evaluation}
-          className="bg-indigo-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center gap-2 disabled:opacity-50"
-          title={!evaluation ? "Сначала запустите оценку" : "Получить предложения ИИ на основе оценки"}
-        >
-          {isImproving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Получить предложения'}
-        </button>
-      </div>
+  const chatContent = (
+    <div className="flex flex-col h-full overflow-hidden">
+      {!hideHeader && (
+        <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-950 sticky top-0 z-10 shadow-sm">
+          <h2 className="font-semibold text-sm flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-indigo-500" />
+            Чат улучшений
+          </h2>
+          {floating && (
+            <button 
+              onClick={() => {
+                setIsExpanded(false);
+                if (activeMiddleTab === 'improvement') {
+                  useStore.getState().setActiveMiddleTab('analysis');
+                }
+              }}
+              className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-400"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
 
-      <div className="p-4 flex-1 overflow-y-auto space-y-6">
-        {improvementMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-slate-500 text-center">
-            <Sparkles className="w-8 h-8 mb-4 text-indigo-400 opacity-50" />
-            <p className="mb-2">Общайтесь с ИИ, чтобы улучшить ваш промпт.</p>
-            <p className="text-sm opacity-75 mb-4">Попробуйте сказать: "Сделай его более кратким" или "Добавь правило о форматировании".</p>
-            <div className="text-xs bg-slate-100 dark:bg-slate-800 p-3 rounded-lg text-left inline-block">
-              <p className="font-semibold mb-1">Доступные команды:</p>
-              <ul className="space-y-1 opacity-80">
-                <li><code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">/apply</code> - Применить последние предложенные изменения</li>
-                <li><code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">/reject</code> - Отклонить изменения</li>
-                <li><code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">/explain</code> - Запросить подробное объяснение</li>
-                <li><code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">/variations</code> - Получить альтернативные версии</li>
-              </ul>
+        <div className="p-4 flex-1 overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+          {improvementMessages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-500 text-center">
+              <Sparkles className="w-8 h-8 mb-4 text-indigo-400 opacity-50" />
+              <p className="mb-2 text-sm">Общайтесь с ИИ, чтобы улучшить ваш промпт.</p>
+              <p className="text-xs opacity-75 mb-4">Попробуйте сказать: "Сделай его более кратким" или "Добавь правило о форматировании".</p>
             </div>
-          </div>
-        ) : (
-          improvementMessages.map((msg, i) => (
-            <ImprovementMessageBubble 
-              key={msg.id || i} 
-              message={msg} 
-              currentPrompt={currentPrompt} 
-              updatePrompt={updatePrompt} 
-              addNotification={addNotification}
-            />
-          ))
-        )}
+          ) : (
+            improvementMessages.map((msg, i) => (
+              <ImprovementMessageBubble 
+                key={msg.id || i} 
+                message={msg} 
+                currentPrompt={currentPrompt} 
+                updatePrompt={updatePrompt} 
+                addNotification={addNotification}
+                onApply={() => {
+                  setIsExpanded(false);
+                  if (activeMiddleTab === 'improvement') {
+                    setActiveMiddleTab('analysis');
+                  }
+                }}
+              />
+            ))
+          )}
         
         {isImproving && (
-          <div className="flex items-center gap-2 text-slate-500 p-4">
-            <Loader2 className="w-4 h-4 animate-spin text-indigo-500" /> ИИ думает...
+          <div className="flex items-center gap-2 text-slate-500 p-2 text-xs">
+            <Loader2 className="w-3 h-3 animate-spin text-indigo-500" /> ИИ думает...
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
+    </div>
+  );
 
+  if (floating) {
+    return (
+      <div 
+        ref={containerRef}
+        className={`absolute bottom-0 left-0 z-50 transition-all duration-300 ease-in-out ${isExpanded ? 'h-[90%] w-[45%]' : 'h-auto w-1/3'}`}
+      >
+        <div className="mx-4 mb-2 bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col h-full">
+          <AnimatePresence>
+            {isExpanded && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="flex-1 overflow-hidden"
+              >
+                {chatContent}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="p-3 bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-900">
+            <div className="flex gap-2 items-end">
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onFocus={() => setIsExpanded(true)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder="Попросите ИИ улучшить промпт..."
+                className="flex-1 resize-none bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition-all"
+                rows={isExpanded ? 3 : 1}
+              />
+              <div className="flex flex-col gap-2">
+                {isExpanded && (
+                  <button
+                    onClick={() => {
+                      setIsExpanded(false);
+                      if (activeMiddleTab === 'improvement') {
+                        useStore.getState().setActiveMiddleTab('analysis');
+                      }
+                    }}
+                    className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                    title="Свернуть"
+                  >
+                    <Minimize2 className="w-4 h-4" />
+                  </button>
+                )}
+                <button
+                  onClick={handleSend}
+                  disabled={isImproving || !input.trim()}
+                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl p-3 flex items-center justify-center transition-all shadow-lg shadow-indigo-500/20 active:scale-95"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900 overflow-hidden">
+      {chatContent}
       <div className="p-4 bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800">
         <div className="flex gap-2">
           <textarea
@@ -120,7 +228,7 @@ export function ImprovementChat() {
   );
 }
 
-function ImprovementMessageBubble({ message, currentPrompt, updatePrompt, addNotification }: { message: any, currentPrompt: any, updatePrompt: any, addNotification: any }) {
+function ImprovementMessageBubble({ message, currentPrompt, updatePrompt, addNotification, onApply }: { message: any, currentPrompt: any, updatePrompt: any, addNotification: any, onApply?: () => void }) {
   const isUser = message.role === 'user';
   const [applied, setApplied] = useState(false);
   const [showDiff, setShowDiff] = useState(true);
@@ -186,10 +294,12 @@ function ImprovementMessageBubble({ message, currentPrompt, updatePrompt, addNot
                   onClick={async () => {
                     await updatePrompt(currentPrompt.id, { 
                       content: message.improvedPrompt,
+                      saveVersion: true,
                       changeNote: message.diffSummary || 'Применены предложения ИИ'
                     });
                     setApplied(true);
                     addNotification('success', 'Промпт успешно обновлен');
+                    if (onApply) onApply();
                   }}
                   disabled={applied}
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${

@@ -8,6 +8,7 @@ import authRoutes from './server/routes/auth.js';
 import promptRoutes from './server/routes/prompts.js';
 import testCaseRoutes from './server/routes/testCases.js';
 import chatRoutes from './server/routes/chat.js';
+import './server/cron/cleanup.js';
 
 async function startServer() {
   const app = express();

@@ -1,12 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store';
-import { X, Key, Save, Settings2, MessageSquare, Sparkles, Activity } from 'lucide-react';
+import { X, Key, Save, Settings2, MessageSquare, Sparkles, Activity, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { GOOGLE_MODELS, OLLAMA_MODELS, DEFAULT_MODELS } from '../constants/models';
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
-  const { user, updateSettings } = useStore();
+  const { user, updateSettings, testApiKey, addNotification } = useStore();
+  const [activeTab, setActiveTab] = useState<'keys' | 'models'>('keys');
+  
   const [geminiKey, setGeminiKey] = useState('');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [isTestingGemini, setIsTestingGemini] = useState(false);
+  const [geminiStatus, setGeminiStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
   const [ollamaKey, setOllamaKey] = useState('');
+  const [showOllamaKey, setShowOllamaKey] = useState(false);
+  const [isTestingOllama, setIsTestingOllama] = useState(false);
+  const [ollamaStatus, setOllamaStatus] = useState<'idle' | 'success' | 'error'>('idle');
   
   const [testProvider, setTestProvider] = useState(user?.testProvider || DEFAULT_MODELS.test.provider);
   const [testModel, setTestModel] = useState(user?.testModel || DEFAULT_MODELS.test.model);
@@ -44,6 +53,28 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     });
     setIsSaving(false);
     onClose();
+  };
+
+  const handleTestKey = async (provider: 'google' | 'ollama') => {
+    const key = provider === 'google' ? geminiKey : ollamaKey;
+    if (!key) {
+      addNotification('error', 'Введите ключ для тестирования');
+      return;
+    }
+
+    if (provider === 'google') {
+      setIsTestingGemini(true);
+      setGeminiStatus('idle');
+      const success = await testApiKey('google', key);
+      setGeminiStatus(success ? 'success' : 'error');
+      setIsTestingGemini(false);
+    } else {
+      setIsTestingOllama(true);
+      setOllamaStatus('idle');
+      const success = await testApiKey('ollama', key);
+      setOllamaStatus(success ? 'success' : 'error');
+      setIsTestingOllama(false);
+    }
   };
 
   const renderModelSelector = (
@@ -103,49 +134,125 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        <div className="flex border-b border-slate-200 dark:border-slate-800">
+          <button
+            onClick={() => setActiveTab('keys')}
+            className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+              activeTab === 'keys' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/10' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            <Key className="w-4 h-4" />
+            API Ключи
+          </button>
+          <button
+            onClick={() => setActiveTab('models')}
+            className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+              activeTab === 'models' ? 'text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/10' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            Выбор моделей
+          </button>
+        </div>
         
-        <div className="p-6 space-y-8 max-h-[70vh] overflow-y-auto">
-          {/* API Keys Section */}
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 text-slate-900 dark:text-white">
-              <Key className="w-4 h-4 text-indigo-500" />
-              <h3 className="font-medium">API Ключи</h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-500">Google Gemini API</label>
-                <input 
-                  type="password"
-                  placeholder={user?.hasGeminiKey ? '••••••••••••••••' : 'Введите ключ Gemini API'}
-                  value={geminiKey}
-                  onChange={e => setGeminiKey(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-                {user?.hasGeminiKey && !geminiKey && <p className="text-[10px] text-green-600">Ключ настроен</p>}
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-xs font-medium text-slate-500">Ollama Cloud API</label>
-                <input 
-                  type="password"
-                  placeholder={user?.hasOllamaKey ? '••••••••••••••••' : 'Введите ключ Ollama API'}
-                  value={ollamaKey}
-                  onChange={e => setOllamaKey(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
-                {user?.hasOllamaKey && !ollamaKey && <p className="text-[10px] text-green-600">Ключ настроен</p>}
+        <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+          {(!user?.hasGeminiKey && !user?.hasOllamaKey) && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl flex gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+              <div className="text-sm text-amber-800 dark:text-amber-200">
+                <p className="font-bold mb-1">Требуется настройка API ключей</p>
+                <p>Для начала работы необходимо указать хотя бы один API ключ. Без этого функции генерации и тестирования будут недоступны.</p>
               </div>
             </div>
-          </section>
+          )}
 
-          {/* Model Selection Section */}
-          <section className="space-y-4">
-            <div className="flex items-center gap-2 text-slate-900 dark:text-white">
-              <Sparkles className="w-4 h-4 text-indigo-500" />
-              <h3 className="font-medium">Выбор моделей для задач</h3>
+          {activeTab === 'keys' ? (
+            <div className="space-y-6">
+              {/* Gemini Key */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Google Gemini API</label>
+                  {user?.hasGeminiKey && !geminiKey && <span className="text-[10px] text-green-600 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Ключ настроен</span>}
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input 
+                      type={showGeminiKey ? 'text' : 'password'}
+                      placeholder={user?.hasGeminiKey ? '••••••••••••••••' : 'Введите ключ Gemini API'}
+                      value={geminiKey}
+                      onChange={e => setGeminiKey(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                    <button 
+                      onClick={() => setShowGeminiKey(!showGeminiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      {showGeminiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => handleTestKey('google')}
+                    disabled={isTestingGemini || !geminiKey}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                      geminiStatus === 'success' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                      geminiStatus === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                      'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    } disabled:opacity-50`}
+                  >
+                    {isTestingGemini ? <Loader2 className="w-3 h-3 animate-spin" /> : 
+                     geminiStatus === 'success' ? <CheckCircle2 className="w-3 h-3" /> :
+                     geminiStatus === 'error' ? <AlertCircle className="w-3 h-3" /> : null}
+                    Тест
+                  </button>
+                </div>
+              </div>
+
+              {/* Ollama Key */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Ollama Cloud API</label>
+                  {user?.hasOllamaKey && !ollamaKey && <span className="text-[10px] text-green-600 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Ключ настроен</span>}
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input 
+                      type={showOllamaKey ? 'text' : 'password'}
+                      placeholder={user?.hasOllamaKey ? '••••••••••••••••' : 'Введите ключ Ollama API'}
+                      value={ollamaKey}
+                      onChange={e => setOllamaKey(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                    <button 
+                      onClick={() => setShowOllamaKey(!showOllamaKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    >
+                      {showOllamaKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => handleTestKey('ollama')}
+                    disabled={isTestingOllama || !ollamaKey}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                      ollamaStatus === 'success' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                      ollamaStatus === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                      'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    } disabled:opacity-50`}
+                  >
+                    {isTestingOllama ? <Loader2 className="w-3 h-3 animate-spin" /> : 
+                     ollamaStatus === 'success' ? <CheckCircle2 className="w-3 h-3" /> :
+                     ollamaStatus === 'error' ? <AlertCircle className="w-3 h-3" /> : null}
+                    Тест
+                  </button>
+                </div>
+              </div>
+              
+              <p className="text-[10px] text-slate-500 italic">
+                Ключи хранятся в зашифрованном виде на сервере и используются только для выполнения запросов к соответствующим API.
+              </p>
             </div>
-            
-            <div className="grid grid-cols-1 gap-4">
+          ) : (
+            <div className="space-y-4">
               {renderModelSelector(
                 "Чат тестирования (по умолчанию)", 
                 <MessageSquare className="w-4 h-4 text-blue-500" />,
@@ -164,10 +271,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                 analysisProvider, setAnalysisProvider, analysisModel, setAnalysisModel
               )}
             </div>
-          </section>
+          )}
         </div>
 
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2">
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 bg-slate-50/50 dark:bg-slate-950/50">
           <button 
             onClick={onClose}
             className="px-4 py-2 text-sm font-medium hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
@@ -179,7 +286,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             disabled={isSaving}
             className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 shadow-lg shadow-indigo-500/20"
           >
-            {isSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Сохранить настройки
           </button>
         </div>
