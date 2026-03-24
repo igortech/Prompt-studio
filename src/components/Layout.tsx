@@ -51,7 +51,7 @@ export function Layout() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 transition-colors overflow-hidden">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
         <div className="flex items-center gap-4">
@@ -168,12 +168,12 @@ export function Layout() {
       {/* Main Content */}
       <main className="flex-1 overflow-hidden flex relative">
         {/* Left Panel: Editor */}
-        <div className="w-1/3 border-r border-slate-200 dark:border-slate-800 flex flex-col">
+        <div className="flex-1 border-r border-slate-200 dark:border-slate-800 flex flex-col min-w-0">
           <PromptEditor />
         </div>
 
         {/* Middle Panel: Evaluation & Improvement */}
-        <div className="w-1/3 border-r border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden bg-white dark:bg-slate-950">
+        <div className="w-1/3 max-w-[500px] min-w-[350px] border-r border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden bg-white dark:bg-slate-950 shrink-0">
           {/* Tabs Header */}
           <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-1">
             <button
@@ -220,13 +220,11 @@ export function Layout() {
           </div>
         </div>
 
-        {/* Right Panel: Chat */}
-        <div className="w-1/3 flex flex-col bg-white dark:bg-slate-950">
-          <TestChat />
-        </div>
+        {/* Spacer for TestChat protruding part */}
+        <div className="w-[180px] shrink-0 bg-slate-50 dark:bg-slate-900 hidden md:block"></div>
 
-        {/* Floating Improvement Chat - Moved here to be over all panels */}
-        <ImprovementChat floating />
+        {/* Right Panel: Chat */}
+        <TestChat />
       </main>
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}

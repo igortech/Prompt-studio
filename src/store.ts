@@ -183,6 +183,7 @@ type Store = {
   
   sendMessage: (content: string, parameters?: any, provider?: string, model?: string) => Promise<void>;
   sendImprovementMessage: (content: string) => Promise<void>;
+  rejectImprovement: (messageId: string) => void;
   analyzePrompt: () => Promise<void>;
   improvePrompt: () => Promise<void>;
 
@@ -197,6 +198,7 @@ type Store = {
   testApiKey: (provider: string, key: string) => Promise<boolean>;
   runTests: (versionId?: string) => Promise<void>;
   runSingleTest: (testCaseId: string, versionId?: string) => Promise<void>;
+  clearMessages: () => Promise<void>;
   replayHistory: (versionId?: string) => Promise<void>;
   
   addNotification: (type: Notification['type'], message: string) => void;
@@ -220,6 +222,15 @@ export const useStore = create<Store>((set, get) => ({
   notifications: [],
   theme: (localStorage.getItem('theme') as 'light' | 'dark') || 'dark',
   activeMiddleTab: 'analysis',
+
+  rejectImprovement: (messageId: string) => {
+    set((state) => ({
+      improvementMessages: state.improvementMessages.map(m => 
+        m.id === messageId ? { ...m, hasChanges: false, improvedPrompt: null, diffSummary: null } : m
+      )
+    }));
+    get().addNotification('info', 'Предложение отклонено');
+  },
 
   addNotification: (type, message) => {
     const id = Date.now().toString();
@@ -462,7 +473,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   sendImprovementMessage: async (content) => {
-    const { currentPrompt, improvementMessages, user, testCases, evaluation } = get();
+    const { currentPrompt, improvementMessages, user, messages, evaluation } = get();
     if (!currentPrompt || !user) return;
 
     const tempId = Date.now().toString();
@@ -482,9 +493,9 @@ export const useStore = create<Store>((set, get) => ({
         const apiKey = keys.google;
         if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
 
-        // Get recent test cases for context
-        const recentTestCases = testCases.slice(-5);
-        const systemInstruction = getChatSystemInstruction(currentPrompt.content, recentTestCases, evaluation);
+        // Get recent chat messages for context
+        const recentMessages = messages.slice(-10);
+        const systemInstruction = getChatSystemInstruction(currentPrompt.content, recentMessages, evaluation);
 
         const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
@@ -547,8 +558,7 @@ export const useStore = create<Store>((set, get) => ({
         const apiKey = keys.google;
         if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
 
-        const history = get().messages.slice(-10);
-        const analysisPrompt = getAnalysisPrompt(currentPrompt.content, history);
+        const analysisPrompt = getAnalysisPrompt(currentPrompt.content);
 
         const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
@@ -559,13 +569,21 @@ export const useStore = create<Store>((set, get) => ({
         
         const data = JSON.parse(response.text || '{}');
         set({ evaluation: data });
-        // Save analysis to the backend
-        await get().updatePrompt(currentPrompt.id, { analysis: data });
+        // Save analysis to the backend and create a version if content changed
+        await get().updatePrompt(currentPrompt.id, { 
+          analysis: data,
+          saveVersion: true,
+          changeNote: 'Анализ промпта'
+        });
       } else {
         const data = await apiFetch(`/api/prompts/${currentPrompt.id}/analyze`, { method: 'POST' });
         set({ evaluation: data });
-        // Save analysis to the backend
-        await get().updatePrompt(currentPrompt.id, { analysis: data });
+        // Save analysis to the backend and create a version if content changed
+        await get().updatePrompt(currentPrompt.id, { 
+          analysis: data,
+          saveVersion: true,
+          changeNote: 'Анализ промпта'
+        });
       }
     } catch (e: any) {
       console.error(e);
@@ -872,24 +890,43 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
-  replayHistory: async (versionId?: string) => {
+  clearMessages: async () => {
     const { currentPrompt } = get();
     if (!currentPrompt) return;
-    
-    set({ isTesting: true });
     try {
-      const data = await apiFetch(`/api/chat/prompt/${currentPrompt.id}/replay`, { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ versionId })
-      });
-      get().addNotification('success', `Успешно воспроизведено ${data.results.length} сообщений`);
-      // We could display the diffs here, but for now just refresh the chat
-      const messages = await apiFetch(`/api/chat/prompt/${currentPrompt.id}`);
-      set({ messages });
+      await apiFetch(`/api/chat/prompt/${currentPrompt.id}`, { method: 'DELETE' });
+      set({ messages: [] });
     } catch (e: any) {
       console.error(e);
-      get().addNotification('error', e.message || 'Не удалось воспроизвести историю');
+      get().addNotification('error', e.message || 'Не удалось очистить чат');
+    }
+  },
+
+  replayHistory: async (versionId?: string) => {
+    const { currentPrompt, messages, sendMessage } = get();
+    if (!currentPrompt) return;
+    
+    // Keep user messages for replay
+    const userMessages = messages.filter(m => m.role === 'user').map(m => m.content);
+    if (userMessages.length === 0) {
+      get().addNotification('info', 'Нет истории для перетестирования');
+      return;
+    }
+
+    set({ isTesting: true });
+    try {
+      // 1. Clear chat first
+      await get().clearMessages();
+      
+      // 2. Re-send each user message one by one to show progress
+      for (const content of userMessages) {
+        await sendMessage(content);
+      }
+      
+      get().addNotification('success', `Успешно перетестировано ${userMessages.length} сообщений`);
+    } catch (e: any) {
+      console.error(e);
+      get().addNotification('error', e.message || 'Не удалось выполнить перетестирование');
     } finally {
       set({ isTesting: false });
     }

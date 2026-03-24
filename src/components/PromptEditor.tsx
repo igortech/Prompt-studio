@@ -93,6 +93,9 @@ export function PromptEditor() {
           )}
         </div>
       </div>
+
+      {/* Floating Improvement Chat - Inside PromptEditor to match its width */}
+      <ImprovementChat floating />
     </div>
   );
 }

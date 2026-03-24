@@ -6,14 +6,16 @@ import { DiffView } from './DiffView';
 import { motion, AnimatePresence } from 'motion/react';
 
 export function ImprovementChat({ hideHeader = false, floating = false }: { hideHeader?: boolean, floating?: boolean }) {
-  const { improvementMessages, sendImprovementMessage, isImproving, currentPrompt, updatePrompt, improvePrompt, evaluation, addNotification, activeMiddleTab, setActiveMiddleTab } = useStore();
+  const { improvementMessages, sendImprovementMessage, rejectImprovement, isImproving, currentPrompt, updatePrompt, improvePrompt, evaluation, addNotification, activeMiddleTab, setActiveMiddleTab } = useStore();
   const [input, setInput] = useState('');
   const [isExpanded, setIsExpanded] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
   };
 
   useEffect(() => {
@@ -96,12 +98,39 @@ export function ImprovementChat({ hideHeader = false, floating = false }: { hide
         </div>
       )}
 
-        <div className="p-4 flex-1 overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+        <div ref={scrollContainerRef} className="p-4 flex-1 overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
           {improvementMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-slate-500 text-center">
-              <Sparkles className="w-8 h-8 mb-4 text-indigo-400 opacity-50" />
-              <p className="mb-2 text-sm">Общайтесь с ИИ, чтобы улучшить ваш промпт.</p>
-              <p className="text-xs opacity-75 mb-4">Попробуйте сказать: "Сделай его более кратким" или "Добавь правило о форматировании".</p>
+            <div className="flex flex-col items-center justify-center py-10 px-4 text-slate-500 text-center">
+              <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/20 rounded-full flex items-center justify-center mb-4">
+                <Sparkles className="w-8 h-8 text-indigo-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">Чат улучшений промпта</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-6 max-w-md">
+                Интерактивный помощник для доработки вашего системного промпта. 
+                Попросите ИИ переписать текст, добавить новые правила или исправить ошибки.
+              </p>
+              
+              <div className="w-full max-w-md bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800 text-left">
+                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Доступные команды</h4>
+                <ul className="space-y-3 text-sm">
+                  <li className="flex items-start gap-3">
+                    <code className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded text-xs font-mono shrink-0">/apply</code>
+                    <span className="text-slate-600 dark:text-slate-400">Применить последние предложенные изменения к промпту</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <code className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded text-xs font-mono shrink-0">/reject</code>
+                    <span className="text-slate-600 dark:text-slate-400">Отклонить предложения и попросить другой вариант</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <code className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded text-xs font-mono shrink-0">/explain</code>
+                    <span className="text-slate-600 dark:text-slate-400">Запросить подробное объяснение предложенных правок</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <code className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded text-xs font-mono shrink-0">/variations</code>
+                    <span className="text-slate-600 dark:text-slate-400">Сгенерировать несколько альтернативных вариантов</span>
+                  </li>
+                </ul>
+              </div>
             </div>
           ) : (
             improvementMessages.map((msg, i) => (
@@ -110,6 +139,7 @@ export function ImprovementChat({ hideHeader = false, floating = false }: { hide
                 message={msg} 
                 currentPrompt={currentPrompt} 
                 updatePrompt={updatePrompt} 
+                rejectImprovement={rejectImprovement}
                 addNotification={addNotification}
                 onApply={() => {
                   setIsExpanded(false);
@@ -126,74 +156,83 @@ export function ImprovementChat({ hideHeader = false, floating = false }: { hide
             <Loader2 className="w-3 h-3 animate-spin text-indigo-500" /> ИИ думает...
           </div>
         )}
-        <div ref={messagesEndRef} />
       </div>
     </div>
   );
 
   if (floating) {
     return (
-      <div 
+      <motion.div 
         ref={containerRef}
-        className={`absolute bottom-0 left-0 z-50 transition-all duration-300 ease-in-out ${isExpanded ? 'h-[90%] w-[45%]' : 'h-auto w-1/3'}`}
+        layout
+        initial={false}
+        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+        className="absolute z-50 bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col"
+        style={{ 
+          width: isExpanded ? '100%' : 'calc(100% - 2rem)',
+          height: isExpanded ? '100%' : 'auto',
+          top: isExpanded ? '0' : 'auto',
+          bottom: isExpanded ? '0' : '0.5rem',
+          left: isExpanded ? '0' : '1rem',
+          right: isExpanded ? '0' : '1rem',
+          maxHeight: isExpanded ? '100%' : '85vh',
+          borderRadius: isExpanded ? '0' : '1rem'
+        }}
       >
-        <div className="mx-4 mb-2 bg-white dark:bg-slate-950 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col h-full">
-          <AnimatePresence>
-            {isExpanded && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="flex-1 overflow-hidden"
-              >
-                {chatContent}
-              </motion.div>
-            )}
-          </AnimatePresence>
+        {isExpanded && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2, delay: 0.1 }}
+            className="flex-1 overflow-hidden flex flex-col min-h-0"
+          >
+            {chatContent}
+          </motion.div>
+        )}
 
-          <div className="p-3 bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-900">
-            <div className="flex gap-2 items-end">
-              <textarea
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onFocus={() => setIsExpanded(true)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder="Попросите ИИ улучшить промпт..."
-                className="flex-1 resize-none bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition-all"
-                rows={isExpanded ? 3 : 1}
-              />
-              <div className="flex flex-col gap-2">
-                {isExpanded && (
-                  <button
-                    onClick={() => {
-                      setIsExpanded(false);
-                      if (activeMiddleTab === 'improvement') {
-                        useStore.getState().setActiveMiddleTab('analysis');
-                      }
-                    }}
-                    className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                    title="Свернуть"
-                  >
-                    <Minimize2 className="w-4 h-4" />
-                  </button>
-                )}
+        <motion.div layout="position" className="p-3 bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-900 shrink-0">
+          <div className="flex gap-2 items-end">
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onFocus={() => setIsExpanded(true)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="Попросите ИИ улучшить промпт..."
+              className="flex-1 resize-none bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500 text-sm transition-all"
+              rows={isExpanded ? 3 : 1}
+            />
+            <div className="flex flex-col gap-2">
+              {isExpanded && (
                 <button
-                  onClick={handleSend}
-                  disabled={isImproving || !input.trim()}
-                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl p-3 flex items-center justify-center transition-all shadow-lg shadow-indigo-500/20 active:scale-95"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsExpanded(false);
+                    if (activeMiddleTab === 'improvement') {
+                      useStore.getState().setActiveMiddleTab('analysis');
+                    }
+                  }}
+                  className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  title="Свернуть"
                 >
-                  <Send className="w-4 h-4" />
+                  <Minimize2 className="w-4 h-4" />
                 </button>
-              </div>
+              )}
+              <button
+                onClick={handleSend}
+                disabled={isImproving || !input.trim()}
+                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl p-3 flex items-center justify-center transition-all shadow-lg shadow-indigo-500/20 active:scale-95"
+              >
+                <Send className="w-4 h-4" />
+              </button>
             </div>
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     );
   }
 
@@ -228,9 +267,9 @@ export function ImprovementChat({ hideHeader = false, floating = false }: { hide
   );
 }
 
-function ImprovementMessageBubble({ message, currentPrompt, updatePrompt, addNotification, onApply }: { message: any, currentPrompt: any, updatePrompt: any, addNotification: any, onApply?: () => void }) {
+function ImprovementMessageBubble({ message, currentPrompt, updatePrompt, rejectImprovement, addNotification, onApply }: { message: any, currentPrompt: any, updatePrompt: any, rejectImprovement: any, addNotification: any, onApply?: () => void }) {
   const isUser = message.role === 'user';
-  const [applied, setApplied] = useState(false);
+  const isAlreadyApplied = currentPrompt.content === message.improvedPrompt;
   const [showDiff, setShowDiff] = useState(true);
 
   return (
@@ -291,24 +330,30 @@ function ImprovementMessageBubble({ message, currentPrompt, updatePrompt, addNot
               
               <div className="flex justify-end gap-2">
                 <button 
+                  onClick={() => rejectImprovement(message.id)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 active:scale-95"
+                >
+                  <X className="w-4 h-4" /> Отклонить
+                </button>
+                <button 
                   onClick={async () => {
+                    if (isAlreadyApplied) return;
                     await updatePrompt(currentPrompt.id, { 
                       content: message.improvedPrompt,
                       saveVersion: true,
                       changeNote: message.diffSummary || 'Применены предложения ИИ'
                     });
-                    setApplied(true);
                     addNotification('success', 'Промпт успешно обновлен');
                     if (onApply) onApply();
                   }}
-                  disabled={applied}
+                  disabled={isAlreadyApplied}
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    applied 
+                    isAlreadyApplied 
                       ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 cursor-default' 
                       : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md hover:shadow-lg active:scale-95'
                   }`}
                 >
-                  {applied ? <><Check className="w-4 h-4" /> Применено</> : <><Check className="w-4 h-4" /> Применить изменения</>}
+                  {isAlreadyApplied ? <><Check className="w-4 h-4" /> Применено</> : <><Check className="w-4 h-4" /> Применить изменения</>}
                 </button>
               </div>
             </div>

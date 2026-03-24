@@ -44,29 +44,56 @@ router.put('/:id', requireAuth, async (req: any, res) => {
   const prompt = await prisma.prompt.findUnique({ where: { id: req.params.id } });
   if (!prompt || prompt.userId !== req.user.id) return res.status(404).json({ error: 'Not found' });
 
-  if (saveVersion && content !== prompt.content) {
+  const finalContent = content !== undefined ? content : prompt.content;
+  const finalAnalysis = analysis !== undefined 
+    ? (typeof analysis === 'string' ? analysis : JSON.stringify(analysis)) 
+    : prompt.analysis;
+
+  if (saveVersion) {
     const versions = await prisma.promptVersion.findMany({
       where: { promptId: prompt.id },
       orderBy: { version: 'desc' },
       take: 1
     });
-    const nextVersion = versions.length > 0 ? versions[0].version + 1 : 1;
     
-    await prisma.promptVersion.create({
-      data: {
-        promptId: prompt.id,
-        version: nextVersion,
-        content: prompt.content,
-        changeNote: changeNote || 'Auto-saved before update',
-        analysis: prompt.analysis
+    const lastVersionContent = versions.length > 0 ? versions[0].content : null;
+    
+    // Create a new version only if the content has changed since the last version
+    // or if there are no versions yet.
+    if (finalContent !== lastVersionContent) {
+      const nextVersion = versions.length > 0 ? versions[0].version + 1 : 1;
+      
+      await prisma.promptVersion.create({
+        data: {
+          promptId: prompt.id,
+          version: nextVersion,
+          content: finalContent,
+          changeNote: changeNote || 'Сохранение версии',
+          analysis: finalAnalysis
+        }
+      });
+
+      // Keep only the last 10 versions
+      const allVersions = await prisma.promptVersion.findMany({
+        where: { promptId: prompt.id },
+        orderBy: { version: 'desc' },
+        select: { id: true }
+      });
+
+      if (allVersions.length > 10) {
+        const versionsToDelete = allVersions.slice(10).map(v => v.id);
+        await prisma.promptVersion.deleteMany({
+          where: { id: { in: versionsToDelete } }
+        });
       }
-    });
+    }
   }
 
-  const dataToUpdate: any = { name, description, content };
-  if (analysis !== undefined) {
-    dataToUpdate.analysis = typeof analysis === 'string' ? analysis : JSON.stringify(analysis);
-  }
+  const dataToUpdate: any = {};
+  if (name !== undefined) dataToUpdate.name = name;
+  if (description !== undefined) dataToUpdate.description = description;
+  if (content !== undefined) dataToUpdate.content = content;
+  if (analysis !== undefined) dataToUpdate.analysis = finalAnalysis;
 
   const updated = await prisma.prompt.update({
     where: { id: req.params.id },
@@ -185,13 +212,7 @@ router.post('/:id/analyze', requireAuth, async (req: any, res) => {
     const provider = user?.analysisProvider || 'google';
     const model = user?.analysisModel || 'gemini-3-flash-preview';
 
-    const history = await prisma.message.findMany({
-      where: { promptId: prompt.id },
-      orderBy: { createdAt: 'asc' },
-      take: 10
-    });
-
-    const analysisPrompt = getAnalysisPrompt(prompt.content, history);
+    const analysisPrompt = getAnalysisPrompt(prompt.content);
     let analysisResult = {};
 
     if (provider === 'google') {
@@ -279,14 +300,15 @@ router.post('/:id/improvement-chat', requireAuth, async (req: any, res) => {
     const provider = user?.improvementProvider || 'google';
     const model = user?.improvementModel || 'gemini-3-flash-preview';
 
-    // Get recent test cases for context
-    const testHistory = await prisma.testCase.findMany({
+    // Get recent chat messages for context
+    const testHistory = await prisma.message.findMany({
       where: { promptId: prompt.id },
       orderBy: { createdAt: 'desc' },
-      take: 5
+      take: 10
     });
 
-    const systemInstruction = getChatSystemInstruction(prompt.content, testHistory);
+    const analysisResult = prompt.analysis ? JSON.parse(prompt.analysis) : null;
+    const systemInstruction = getChatSystemInstruction(prompt.content, testHistory.reverse(), analysisResult);
     let result = { message: '', action: 'none', full_prompt_preview: '', suggested_changes: { reasoning: '' } };
 
     if (provider === 'google') {

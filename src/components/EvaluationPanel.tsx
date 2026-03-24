@@ -18,22 +18,11 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
   const [editInput, setEditInput] = useState('');
   const [editExpected, setEditExpected] = useState('');
   const [runningTestId, setRunningTestId] = useState<string | null>(null);
-  const [selectedVersionId, setSelectedVersionId] = useState<string>('');
   const [showDiffId, setShowDiffId] = useState<string | null>(null);
 
   const chartData = useMemo(() => {
     if (!evaluation?.evaluation) return [];
     
-    const selectedVersion = currentPrompt?.versions?.find((v: any) => v.id === selectedVersionId);
-    let versionEval = null;
-    if (selectedVersion && selectedVersion.analysis) {
-      try {
-        versionEval = typeof selectedVersion.analysis === 'string' ? JSON.parse(selectedVersion.analysis) : selectedVersion.analysis;
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
     const data = Object.entries(evaluation.evaluation).map(([key, data]: [string, any]) => {
       const translations: Record<string, string> = {
         factual: 'Факты',
@@ -54,15 +43,11 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
         fullMark: 10,
       };
       
-      if (versionEval && versionEval.evaluation && versionEval.evaluation[key]) {
-        item[`Версия ${selectedVersion.version}`] = versionEval.evaluation[key].score;
-      }
-      
       return item;
     });
     
     return data;
-  }, [evaluation, currentPrompt, selectedVersionId]);
+  }, [evaluation, currentPrompt]);
 
   if (!currentPrompt) return null;
 
@@ -85,12 +70,12 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
 
   const handleRunSingleTest = async (tcId: string) => {
     setRunningTestId(tcId);
-    await useStore.getState().runSingleTest(tcId, selectedVersionId || undefined);
+    await useStore.getState().runSingleTest(tcId);
     setRunningTestId(null);
   };
 
   const handleRunAllTests = async () => {
-    await useStore.getState().runTests(selectedVersionId || undefined);
+    await useStore.getState().runTests();
   };
 
   return (
@@ -126,20 +111,6 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
         
         {activeTab === 'tests' && (
           <div className="flex gap-2 items-center">
-            {currentPrompt.versions && currentPrompt.versions.length > 0 && (
-              <select
-                value={selectedVersionId}
-                onChange={(e) => setSelectedVersionId(e.target.value)}
-                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
-              >
-                <option value="">Текущая версия</option>
-                {currentPrompt.versions.map((v: any) => (
-                  <option key={v.id} value={v.id}>
-                    v{v.version} {v.changeNote ? `- ${v.changeNote.substring(0, 20)}...` : ''}
-                  </option>
-                ))}
-              </select>
-            )}
             <button
               onClick={() => useStore.getState().generateScenarios(5)}
               disabled={isTesting}
@@ -174,20 +145,6 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
                 <h3 className="font-semibold">Анализ промпта</h3>
               </div>
               <div className="flex gap-2 items-center">
-                {currentPrompt.versions && currentPrompt.versions.length > 0 && (
-                  <select
-                    value={selectedVersionId}
-                    onChange={(e) => setSelectedVersionId(e.target.value)}
-                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1.5 text-sm outline-none focus:border-indigo-500"
-                  >
-                    <option value="">Сравнить с...</option>
-                    {currentPrompt.versions.map((v: any) => (
-                      <option key={v.id} value={v.id}>
-                        v{v.version} {v.changeNote ? `- ${v.changeNote.substring(0, 20)}...` : ''}
-                      </option>
-                    ))}
-                  </select>
-                )}
                 <button
                   onClick={analyzePrompt}
                   disabled={isAnalyzing}
@@ -235,12 +192,27 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
                 
                 {/* Radar Chart & Metrics Grid */}
                 <div className="flex flex-col gap-6">
+                  {/* Radar Chart */}
+                  {chartData.length > 0 && (
+                    <div className="bg-white dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex items-center justify-center">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={chartData}>
+                          <PolarGrid stroke="#e2e8f0" />
+                          <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }} />
+                          <PolarRadiusAxis angle={30} domain={[0, 10]} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                          <Radar name="Текущая" dataKey="Текущая" stroke="#6366f1" fill="#6366f1" fillOpacity={0.5} />
+                          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#f8fafc' }} />
+                          <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+
                   {/* Detailed Analysis Cards */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-white dark:bg-slate-950 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                       <h4 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                         <CheckCircle2 className="w-4 h-4" /> Сильные стороны
-                        {selectedVersionId && <span className="text-[10px] text-slate-400 normal-case font-normal ml-auto">Сравнение с v{currentPrompt.versions?.find((v: any) => v.id === selectedVersionId)?.version}</span>}
                       </h4>
                       <div className="space-y-4">
                         <ul className="space-y-2">
@@ -254,31 +226,11 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
                             <li className="text-xs text-slate-400 italic">Не выявлено</li>
                           )}
                         </ul>
-                        
-                        {selectedVersionId && (
-                          <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                            <div className="text-[10px] font-bold text-slate-400 mb-2 uppercase">Версия {currentPrompt.versions?.find((v: any) => v.id === selectedVersionId)?.version}:</div>
-                            <ul className="space-y-2 opacity-60">
-                              {(() => {
-                                const v = currentPrompt.versions?.find((v: any) => v.id === selectedVersionId);
-                                if (!v?.analysis) return <li className="text-xs italic">Нет данных</li>;
-                                const vEval = typeof v.analysis === 'string' ? JSON.parse(v.analysis) : v.analysis;
-                                return vEval.analysis?.strengths?.map((s: string, i: number) => (
-                                  <li key={i} className="text-xs text-slate-600 dark:text-slate-400 flex items-start gap-2">
-                                    <div className="w-1 h-1 rounded-full bg-slate-400 mt-1.5 shrink-0" />
-                                    {s}
-                                  </li>
-                                )) || <li className="text-xs italic">Нет данных</li>;
-                              })()}
-                            </ul>
-                          </div>
-                        )}
                       </div>
                     </div>
                     <div className="bg-white dark:bg-slate-950 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                       <h4 className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4" /> Слабые места
-                        {selectedVersionId && <span className="text-[10px] text-slate-400 normal-case font-normal ml-auto">Сравнение с v{currentPrompt.versions?.find((v: any) => v.id === selectedVersionId)?.version}</span>}
                       </h4>
                       <div className="space-y-4">
                         <ul className="space-y-2">
@@ -292,25 +244,6 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
                             <li className="text-xs text-slate-400 italic">Не выявлено</li>
                           )}
                         </ul>
-
-                        {selectedVersionId && (
-                          <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                            <div className="text-[10px] font-bold text-slate-400 mb-2 uppercase">Версия {currentPrompt.versions?.find((v: any) => v.id === selectedVersionId)?.version}:</div>
-                            <ul className="space-y-2 opacity-60">
-                              {(() => {
-                                const v = currentPrompt.versions?.find((v: any) => v.id === selectedVersionId);
-                                if (!v?.analysis) return <li className="text-xs italic">Нет данных</li>;
-                                const vEval = typeof v.analysis === 'string' ? JSON.parse(v.analysis) : v.analysis;
-                                return vEval.analysis?.weaknesses?.map((w: string, i: number) => (
-                                  <li key={i} className="text-xs text-slate-600 dark:text-slate-400 flex items-start gap-2">
-                                    <div className="w-1 h-1 rounded-full bg-slate-400 mt-1.5 shrink-0" />
-                                    {w}
-                                  </li>
-                                )) || <li className="text-xs italic">Нет данных</li>;
-                              })()}
-                            </ul>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -328,25 +261,6 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
                           </li>
                         ))}
                       </ul>
-                    </div>
-                  )}
-
-                  {/* Radar Chart */}
-                  {chartData.length > 0 && (
-                    <div className="bg-white dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm h-80 flex items-center justify-center">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={chartData}>
-                          <PolarGrid stroke="#e2e8f0" />
-                          <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }} />
-                          <PolarRadiusAxis angle={30} domain={[0, 10]} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                          <Radar name="Текущая" dataKey="Текущая" stroke="#6366f1" fill="#6366f1" fillOpacity={0.5} />
-                          {selectedVersionId && (
-                            <Radar name={`Версия ${currentPrompt.versions?.find((v: any) => v.id === selectedVersionId)?.version}`} dataKey={`Версия ${currentPrompt.versions?.find((v: any) => v.id === selectedVersionId)?.version}`} stroke="#10b981" fill="#10b981" fillOpacity={0.5} />
-                          )}
-                          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#f8fafc' }} />
-                          <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                        </RadarChart>
-                      </ResponsiveContainer>
                     </div>
                   )}
 

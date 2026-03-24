@@ -42,19 +42,25 @@ router.post('/prompt/:promptId', requireAuth, async (req: any, res) => {
     let totalTokens = 0;
     let latencyMs = 0;
     const startTime = Date.now();
+    console.log(`[Chat] Starting request for prompt ${promptId} with model ${finalModel}`);
 
     if (finalProvider === 'google') {
+      const keyStartTime = Date.now();
       const userKey = await getDecryptedKey(req.user.id, 'google');
+      console.log(`[Chat] Key retrieval took ${Date.now() - keyStartTime}ms`);
+      
       const apiKey = userKey || process.env.GEMINI_API_KEY;
       if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
       const ai = new GoogleGenAI({ apiKey });
 
       // Get chat history for context (last 20 messages)
+      const historyStartTime = Date.now();
       const history = await prisma.message.findMany({
         where: { promptId },
         orderBy: { createdAt: 'desc' },
         take: 21 // Take 21 to get 20 previous + current
       });
+      console.log(`[Chat] History retrieval took ${Date.now() - historyStartTime}ms`);
 
       const reversedHistory = history.reverse();
       const systemInstruction = prompt.content;
@@ -72,7 +78,9 @@ router.post('/prompt/:promptId', requireAuth, async (req: any, res) => {
         history: formattedHistory
       });
 
+      const aiStartTime = Date.now();
       const response = await chat.sendMessage({ message: content });
+      console.log(`[Chat] AI response took ${Date.now() - aiStartTime}ms`);
       assistantContent = response.text || '';
       latencyMs = Date.now() - startTime;
 
