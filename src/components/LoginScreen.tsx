@@ -86,7 +86,7 @@ export function LoginScreen() {
           <Bot className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
         </div>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-          Prompt Studio
+          Студия Промптов
         </h1>
         <p className="text-slate-500 dark:text-slate-400 mb-8">
           {isLogin ? 'Войдите, чтобы управлять вашими промптами' : 'Создайте аккаунт для работы с промптами'}

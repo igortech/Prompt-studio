@@ -98,10 +98,11 @@ export function HistoryPanel() {
             )}
 
             <button 
-              onClick={() => {
+              onClick={async () => {
                 if (window.confirm(`Вы уверены, что хотите восстановить версию ${compareVersion.version}?`)) {
-                  updatePrompt(currentPrompt.id, { 
+                  await updatePrompt(currentPrompt.id, { 
                     content: compareVersion.content, 
+                    analysis: compareVersion.analysis,
                     saveVersion: true, 
                     changeNote: `Восстановлено из версии ${compareVersion.version}` 
                   });

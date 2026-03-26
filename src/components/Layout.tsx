@@ -8,7 +8,47 @@ import { ImprovementChat } from './ImprovementChat';
 import { SettingsModal } from './SettingsModal';
 import { CreatePromptModal } from './CreatePromptModal';
 import { EditPromptModal } from './EditPromptModal';
-import { Settings, LogOut, Moon, Sun, LayoutDashboard, Download, Upload, PlusCircle, Trash2, Edit2, Sparkles, BarChart2, Target, History } from 'lucide-react';
+import { Settings, LogOut, Moon, Sun, LayoutDashboard, Download, Upload, PlusCircle, Trash2, Edit2, Sparkles, BarChart2, Target, History, Bot, ChevronUp, ChevronDown } from 'lucide-react';
+
+function TestingView() {
+  const [showChat, setShowChat] = useState(false);
+
+  return (
+    <div className="flex-1 flex flex-col relative overflow-hidden">
+      {/* Tests View */}
+      <div className={`absolute inset-0 flex flex-col transition-transform duration-300 ${showChat ? '-translate-y-full' : 'translate-y-0'}`}>
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <EvaluationPanel view="tests" />
+        </div>
+        {/* Bottom Bar to open Chat */}
+        <div 
+          className="h-12 shrink-0 bg-indigo-50 dark:bg-indigo-900/20 border-t border-indigo-100 dark:border-indigo-800/30 flex items-center justify-center cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors group"
+          onClick={() => setShowChat(true)}
+        >
+          <span className="font-semibold text-sm text-indigo-700 dark:text-indigo-300 flex items-center gap-2 group-hover:-translate-y-0.5 transition-transform">
+            <Bot className="w-5 h-5" /> Тестовый чат <ChevronUp className="w-4 h-4 ml-1 opacity-50" />
+          </span>
+        </div>
+      </div>
+
+      {/* Chat View */}
+      <div className={`absolute inset-0 flex flex-col transition-transform duration-300 ${showChat ? 'translate-y-0' : 'translate-y-full'}`}>
+        {/* Top Bar to open Tests */}
+        <div 
+          className="h-12 shrink-0 bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-100 dark:border-emerald-800/30 flex items-center justify-center cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors group"
+          onClick={() => setShowChat(false)}
+        >
+          <span className="font-semibold text-sm text-emerald-700 dark:text-emerald-300 flex items-center gap-2 group-hover:translate-y-0.5 transition-transform">
+            <ChevronDown className="w-4 h-4 mr-1 opacity-50" /> Выполнение тестов <Target className="w-5 h-5" />
+          </span>
+        </div>
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <TestChat />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function Layout() {
   const { 
@@ -57,7 +97,7 @@ export function Layout() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-xl">
             <LayoutDashboard className="w-6 h-6" />
-            Prompt Studio
+            Студия Промптов
           </div>
           
           <div className="flex items-center gap-2 ml-8">
@@ -167,13 +207,13 @@ export function Layout() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-hidden flex relative">
-        {/* Left Panel: Editor */}
-        <div className="flex-1 border-r border-slate-200 dark:border-slate-800 flex flex-col min-w-0">
+        {/* Left Panel: Editor (60%) */}
+        <div className="flex-[6] border-r border-slate-200 dark:border-slate-800 flex flex-col min-w-0">
           <PromptEditor />
         </div>
 
-        {/* Middle Panel: Evaluation & Improvement */}
-        <div className="w-1/3 max-w-[500px] min-w-[350px] border-r border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden bg-white dark:bg-slate-950 shrink-0">
+        {/* Right Panel: Evaluation & Improvement & Testing (40%) */}
+        <div className="flex-[4] flex flex-col overflow-hidden bg-white dark:bg-slate-950 min-w-0">
           {/* Tabs Header */}
           <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-1">
             <button
@@ -212,19 +252,13 @@ export function Layout() {
           </div>
 
           {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto flex flex-col">
+          <div className="flex-1 overflow-hidden flex flex-col">
             {activeMiddleTab === 'history' && <HistoryPanel />}
             {activeMiddleTab === 'analysis' && <EvaluationPanel view="analysis" />}
-            {activeMiddleTab === 'testing' && <EvaluationPanel view="tests" />}
+            {activeMiddleTab === 'testing' && <TestingView />}
             {activeMiddleTab === 'improvement' && <EvaluationPanel view="analysis" />}
           </div>
         </div>
-
-        {/* Spacer for TestChat protruding part */}
-        <div className="w-[180px] shrink-0 bg-slate-50 dark:bg-slate-900 hidden md:block"></div>
-
-        {/* Right Panel: Chat */}
-        <TestChat />
       </main>
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}

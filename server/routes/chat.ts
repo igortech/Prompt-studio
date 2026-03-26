@@ -1,11 +1,10 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../services/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getDecryptedKey } from '../services/crypto.js';
 import { GoogleGenAI } from '@google/genai';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 router.get('/prompt/:promptId', requireAuth, async (req: any, res) => {
   const prompt = await prisma.prompt.findUnique({ where: { id: req.params.promptId } });
@@ -105,7 +104,8 @@ router.post('/prompt/:promptId', requireAuth, async (req: any, res) => {
       if (!userKey) throw new Error('Ollama API key is not configured in settings');
       
       // Assuming Ollama Cloud API endpoint or local
-      const endpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/chat';
+      const endpoint = process.env.OLLAMA_ENDPOINT;
+      if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
       
       const history = await prisma.message.findMany({
         where: { promptId },

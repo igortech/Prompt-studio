@@ -29,7 +29,11 @@ export function PromptEditor() {
     const timer = setTimeout(() => {
       if (content !== currentPrompt.content || name !== currentPrompt.name) {
         setIsSaving(true);
-        updatePrompt(currentPrompt.id, { content, name }).then(() => setIsSaving(false));
+        const updateData: any = { content, name };
+        if (content !== currentPrompt.content) {
+          updateData.analysis = null;
+        }
+        updatePrompt(currentPrompt.id, updateData).then(() => setIsSaving(false));
       }
     }, 2000);
 

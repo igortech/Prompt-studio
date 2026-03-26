@@ -1,12 +1,11 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../services/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getDecryptedKey } from '../services/crypto.js';
 import { GoogleGenAI } from '@google/genai';
 import { getAnalysisPrompt, getImprovePrompt, getEvalPrompt, getChatSystemInstruction } from '../prompts/systemPrompts.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 router.get('/', requireAuth, async (req: any, res) => {
   const prompts = await prisma.prompt.findMany({
@@ -46,7 +45,7 @@ router.put('/:id', requireAuth, async (req: any, res) => {
 
   const finalContent = content !== undefined ? content : prompt.content;
   const finalAnalysis = analysis !== undefined 
-    ? (typeof analysis === 'string' ? analysis : JSON.stringify(analysis)) 
+    ? (analysis === null ? null : (typeof analysis === 'string' ? analysis : JSON.stringify(analysis))) 
     : prompt.analysis;
 
   if (saveVersion) {
@@ -220,7 +219,8 @@ router.post('/:id/analyze', requireAuth, async (req: any, res) => {
     } else if (provider === 'ollama') {
       const userKey = await getDecryptedKey(req.user.id, 'ollama');
       if (!userKey) throw new Error('Ollama API key is not configured in settings');
-      const endpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/generate';
+      const endpoint = process.env.OLLAMA_ENDPOINT;
+      if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
       
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -264,7 +264,8 @@ router.post('/:id/improve', requireAuth, async (req: any, res) => {
     } else if (provider === 'ollama') {
       const userKey = await getDecryptedKey(req.user.id, 'ollama');
       if (!userKey) throw new Error('Ollama API key is not configured in settings');
-      const endpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/generate';
+      const endpoint = process.env.OLLAMA_ENDPOINT;
+      if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
       
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -316,7 +317,8 @@ router.post('/:id/improvement-chat', requireAuth, async (req: any, res) => {
     } else if (provider === 'ollama') {
       const userKey = await getDecryptedKey(req.user.id, 'ollama');
       if (!userKey) throw new Error('Ollama API key is not configured in settings');
-      const endpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/chat';
+      const endpoint = process.env.OLLAMA_ENDPOINT;
+      if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
       
       const messages = [
         { role: 'system', content: systemInstruction },
@@ -407,7 +409,8 @@ router.post('/:id/run-tests', requireAuth, async (req: any, res) => {
           actualOutput = genResponse.text || '';
         } else if (testProvider === 'ollama') {
           const userKey = await getDecryptedKey(req.user.id, 'ollama');
-          const endpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/chat';
+          const endpoint = process.env.OLLAMA_ENDPOINT;
+          if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
           const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -440,7 +443,8 @@ router.post('/:id/run-tests', requireAuth, async (req: any, res) => {
           evaluation = JSON.parse(evalResponse.text || '{}');
         } else if (analysisProvider === 'ollama') {
           const userKey = await getDecryptedKey(req.user.id, 'ollama');
-          const endpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/generate';
+          const endpoint = process.env.OLLAMA_ENDPOINT;
+          if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
           const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

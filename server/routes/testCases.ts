@@ -1,12 +1,11 @@
 import express from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../services/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getDecryptedKey } from '../services/crypto.js';
 import { GoogleGenAI, Type } from '@google/genai';
 import { getEvalPrompt, getTestingPrompt } from '../prompts/systemPrompts.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 router.post('/prompt/:promptId/generate-scenarios', requireAuth, async (req: any, res) => {
   try {

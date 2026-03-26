@@ -1,7 +1,6 @@
 import crypto from 'crypto';
-import { PrismaClient } from '@prisma/client';
+import prisma from './prisma.js';
 
-const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-for-dev';
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY 

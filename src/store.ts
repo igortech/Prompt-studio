@@ -342,18 +342,29 @@ export const useStore = create<Store>((set, get) => ({
       });
       
       // If we saved a version, we should re-fetch the prompt to get the updated versions list
+      let promptToUse = updated;
       if (data.saveVersion) {
-        const fullPrompt = await apiFetch(`/api/prompts/${id}`);
-        set((state) => ({
-          prompts: state.prompts.map((p) => (p.id === id ? fullPrompt : p)),
-          currentPrompt: state.currentPrompt?.id === id ? fullPrompt : state.currentPrompt,
-        }));
-      } else {
-        set((state) => ({
-          prompts: state.prompts.map((p) => (p.id === id ? updated : p)),
-          currentPrompt: state.currentPrompt?.id === id ? updated : state.currentPrompt,
-        }));
+        promptToUse = await apiFetch(`/api/prompts/${id}`);
       }
+      
+      let newEvaluation = get().evaluation;
+      if (data.analysis !== undefined) {
+        if (promptToUse.analysis) {
+          try {
+            newEvaluation = typeof promptToUse.analysis === 'string' ? JSON.parse(promptToUse.analysis) : promptToUse.analysis;
+          } catch (e) {
+            console.error('Failed to parse analysis JSON', e);
+          }
+        } else {
+          newEvaluation = null;
+        }
+      }
+
+      set((state) => ({
+        prompts: state.prompts.map((p) => (p.id === id ? promptToUse : p)),
+        currentPrompt: state.currentPrompt?.id === id ? promptToUse : state.currentPrompt,
+        evaluation: state.currentPrompt?.id === id ? newEvaluation : state.evaluation,
+      }));
     } catch (e: any) {
       get().addNotification('error', e.message || 'Не удалось обновить промпт');
     }
@@ -515,7 +526,7 @@ export const useStore = create<Store>((set, get) => ({
           text: result.message,
           has_changes: result.action === 'suggest' || result.action === 'apply',
           improved_prompt: result.full_prompt_preview,
-          diff_summary: result.suggested_changes?.reasoning || 'AI suggestions'
+          diff_summary: result.suggested_changes?.reasoning || 'Предложения ИИ'
         };
       } else {
         data = await apiFetch(`/api/prompts/${currentPrompt.id}/improvement-chat`, {
@@ -634,7 +645,7 @@ export const useStore = create<Store>((set, get) => ({
           content,
           hasChanges: !!data.improved_prompt,
           improvedPrompt: data.improved_prompt,
-          diffSummary: 'Applied all suggested improvements.'
+          diffSummary: 'Применены все предложенные улучшения.'
         }]
       }));
     } catch (e: any) {

@@ -22,7 +22,7 @@ export function DiffView({ oldText, newText }: DiffViewProps) {
   const changes = diff.diffArrays(oldTokens, newTokens);
 
   return (
-    <div className="w-full h-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-4 font-mono text-sm overflow-auto whitespace-pre-wrap">
+    <div className="w-full h-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-4 font-mono text-sm overflow-auto whitespace-pre-wrap break-words">
       {changes.map((change, i) => {
         let className = "text-slate-800 dark:text-slate-200";
         if (change.added) className = "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200";

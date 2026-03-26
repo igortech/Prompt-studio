@@ -103,7 +103,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="google">Google Gemini</option>
-            <option value="ollama">Ollama Cloud</option>
+            <option value="ollama">Ollama</option>
           </select>
         </div>
         <div>
@@ -211,7 +211,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               {/* Ollama Key */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Ollama Cloud API</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">Ollama API</label>
                   {user?.hasOllamaKey && !ollamaKey && <span className="text-[10px] text-green-600 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Ключ настроен</span>}
                 </div>
                 <div className="flex gap-2">

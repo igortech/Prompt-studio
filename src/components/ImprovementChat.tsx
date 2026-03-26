@@ -58,7 +58,8 @@ export function ImprovementChat({ hideHeader = false, floating = false }: { hide
         await updatePrompt(currentPrompt.id, { 
           content: lastChange.improvedPrompt,
           saveVersion: true,
-          changeNote: lastChange.diffSummary || 'Применены предложения ИИ'
+          changeNote: lastChange.diffSummary || 'Применены предложения ИИ',
+          analysis: null
         });
         addNotification('success', 'Изменения применены');
         setIsExpanded(false);
@@ -281,7 +282,7 @@ function ImprovementMessageBubble({ message, currentPrompt, updatePrompt, reject
         
         <div className="flex flex-col gap-2 w-full">
           <div className={`p-4 rounded-2xl ${isUser ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-tl-sm'}`}>
-            <div className="markdown-body prose dark:prose-invert max-w-none text-sm">
+            <div className="markdown-body prose dark:prose-invert max-w-none text-sm break-words overflow-hidden">
               <Markdown>{message.content}</Markdown>
             </div>
           </div>
@@ -321,7 +322,7 @@ function ImprovementMessageBubble({ message, currentPrompt, updatePrompt, reject
                   {showDiff ? (
                     <DiffView oldText={currentPrompt.content} newText={message.improvedPrompt} />
                   ) : (
-                    <pre className="text-xs font-mono whitespace-pre-wrap text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-950 p-3">
+                    <pre className="text-xs font-mono whitespace-pre-wrap break-words text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-950 p-3">
                       {message.improvedPrompt}
                     </pre>
                   )}
@@ -341,7 +342,8 @@ function ImprovementMessageBubble({ message, currentPrompt, updatePrompt, reject
                     await updatePrompt(currentPrompt.id, { 
                       content: message.improvedPrompt,
                       saveVersion: true,
-                      changeNote: message.diffSummary || 'Применены предложения ИИ'
+                      changeNote: message.diffSummary || 'Применены предложения ИИ',
+                      analysis: null
                     });
                     addNotification('success', 'Промпт успешно обновлен');
                     if (onApply) onApply();

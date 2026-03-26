@@ -52,7 +52,7 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
   if (!currentPrompt) return null;
 
   const handleCreateTest = () => {
-    createTestCase({ input: 'New test input', expectedOutput: '' });
+    createTestCase({ input: 'Новый тестовый ввод', expectedOutput: '' });
   };
 
   const startEdit = (tc: any) => {
@@ -82,30 +82,28 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
     <div className="flex flex-col bg-white dark:bg-slate-950 flex-1 relative overflow-hidden">
       <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-950 shadow-sm">
         <div className="flex items-center gap-4">
+          <h2 className="font-semibold flex items-center gap-2">
+            {activeTab === 'analysis' ? (
+              <><BarChart2 className="w-5 h-5 text-indigo-500" /> Анализ</>
+            ) : (
+              <><Target className="w-5 h-5 text-indigo-500" /> Тестирование</>
+            )}
+          </h2>
           {!view && (
-            <>
-              <h2 className="font-semibold flex items-center gap-2">
-                {activeTab === 'analysis' ? (
-                  <><BarChart2 className="w-5 h-5 text-indigo-500" /> Анализ</>
-                ) : (
-                  <><Target className="w-5 h-5 text-indigo-500" /> Тестирование</>
-                )}
-              </h2>
-              <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
-                <button
-                  onClick={() => setInternalTab('analysis')}
-                  className={`px-3 py-1 text-sm rounded-md transition-colors ${activeTab === 'analysis' ? 'bg-white dark:bg-slate-700 shadow-sm font-medium text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                >
-                  чата
-                </button>
-                <button
-                  onClick={() => setInternalTab('tests')}
-                  className={`px-3 py-1 text-sm rounded-md transition-colors ${activeTab === 'tests' ? 'bg-white dark:bg-slate-700 shadow-sm font-medium text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                >
-                  кейсы
-                </button>
-              </div>
-            </>
+            <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+              <button
+                onClick={() => setInternalTab('analysis')}
+                className={`px-3 py-1 text-sm rounded-md transition-colors ${activeTab === 'analysis' ? 'bg-white dark:bg-slate-700 shadow-sm font-medium text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                чата
+              </button>
+              <button
+                onClick={() => setInternalTab('tests')}
+                className={`px-3 py-1 text-sm rounded-md transition-colors ${activeTab === 'tests' ? 'bg-white dark:bg-slate-700 shadow-sm font-medium text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                кейсы
+              </button>
+            </div>
           )}
         </div>
         
@@ -161,7 +159,7 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
                   <div className="w-16 h-16 border-4 border-indigo-100 dark:border-indigo-900/30 rounded-full animate-pulse" />
                   <Loader2 className="w-8 h-8 animate-spin text-indigo-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
                 </div>
-                <p className="font-medium">Анализ истории переписки...</p>
+                <p className="font-medium">Анализ промпта...</p>
                 <p className="text-xs opacity-60 mt-1 italic">Это может занять несколько секунд</p>
               </div>
             ) : evaluation ? (
@@ -476,6 +474,9 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
                                     )}
                                     {result.metrics.accuracy !== undefined && (
                                       <span className="text-slate-600 dark:text-slate-400">Точность: <strong className="text-slate-900 dark:text-slate-100">{result.metrics.accuracy}/10</strong></span>
+                                    )}
+                                    {result.metrics.conciseness !== undefined && (
+                                      <span className="text-slate-600 dark:text-slate-400">Краткость: <strong className="text-slate-900 dark:text-slate-100">{result.metrics.conciseness}/10</strong></span>
                                     )}
                                   </div>
                                 )}
