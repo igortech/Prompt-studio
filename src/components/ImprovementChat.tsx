@@ -52,24 +52,6 @@ export function ImprovementChat({ hideHeader = false, floating = false }: { hide
     const msg = input.trim();
     setInput('');
 
-    if (msg === '/apply') {
-      const lastChange = [...improvementMessages].reverse().find(m => m.hasChanges && m.improvedPrompt);
-      if (lastChange && lastChange.improvedPrompt) {
-        await updatePrompt(currentPrompt.id, { 
-          content: lastChange.improvedPrompt,
-          saveVersion: true,
-          changeNote: lastChange.diffSummary || 'Применены предложения ИИ',
-          analysis: null
-        });
-        addNotification('success', 'Изменения применены');
-        setIsExpanded(false);
-        if (activeMiddleTab === 'improvement') {
-          setActiveMiddleTab('analysis');
-        }
-      }
-      return;
-    }
-
     await sendImprovementMessage(msg);
   };
 
@@ -107,28 +89,44 @@ export function ImprovementChat({ hideHeader = false, floating = false }: { hide
               </div>
               <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">Чат улучшений промпта</h3>
               <p className="text-sm text-slate-600 dark:text-slate-400 mb-6 max-w-md">
-                Интерактивный помощник для доработки вашего системного промпта. 
-                Попросите ИИ переписать текст, добавить новые правила или исправить ошибки.
+                Ваш интеллектуальный помощник для управления и оптимизации промпта. 
+                Я могу не только корректировать текст, но и запускать анализ, проводить тесты и управлять интерфейсом.
               </p>
               
               <div className="w-full max-w-md bg-slate-50 dark:bg-slate-900/50 rounded-xl p-4 border border-slate-200 dark:border-slate-800 text-left">
-                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Доступные команды</h4>
+                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Что я умею:</h4>
                 <ul className="space-y-3 text-sm">
                   <li className="flex items-start gap-3">
-                    <code className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded text-xs font-mono shrink-0">/apply</code>
-                    <span className="text-slate-600 dark:text-slate-400">Применить последние предложенные изменения к промпту</span>
+                    <div className="w-5 h-5 rounded bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center shrink-0">
+                      <Sparkles className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                    </div>
+                    <div className="text-slate-600 dark:text-slate-400 prose prose-sm dark:prose-invert max-w-none">
+                      <Markdown>**Оптимизация**: Улучшение структуры, логики и безопасности промпта.</Markdown>
+                    </div>
                   </li>
                   <li className="flex items-start gap-3">
-                    <code className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded text-xs font-mono shrink-0">/reject</code>
-                    <span className="text-slate-600 dark:text-slate-400">Отклонить предложения и попросить другой вариант</span>
+                    <div className="w-5 h-5 rounded bg-slate-200 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                      <FileText className="w-3 h-3 text-slate-600 dark:text-slate-400" />
+                    </div>
+                    <div className="text-slate-600 dark:text-slate-400 prose prose-sm dark:prose-invert max-w-none">
+                      <Markdown>**Анализ**: Поиск ошибок и слабых мест в реальном времени.</Markdown>
+                    </div>
                   </li>
                   <li className="flex items-start gap-3">
-                    <code className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded text-xs font-mono shrink-0">/explain</code>
-                    <span className="text-slate-600 dark:text-slate-400">Запросить подробное объяснение предложенных правок</span>
+                    <div className="w-5 h-5 rounded bg-slate-200 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                      <Split className="w-3 h-3 text-slate-600 dark:text-slate-400" />
+                    </div>
+                    <div className="text-slate-600 dark:text-slate-400 prose prose-sm dark:prose-invert max-w-none">
+                      <Markdown>**Тестирование**: Запуск сценариев и проверка качества ответов.</Markdown>
+                    </div>
                   </li>
                   <li className="flex items-start gap-3">
-                    <code className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded text-xs font-mono shrink-0">/variations</code>
-                    <span className="text-slate-600 dark:text-slate-400">Сгенерировать несколько альтернативных вариантов</span>
+                    <div className="w-5 h-5 rounded bg-slate-200 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                      <ArrowRight className="w-3 h-3 text-slate-600 dark:text-slate-400" />
+                    </div>
+                    <div className="text-slate-600 dark:text-slate-400 prose prose-sm dark:prose-invert max-w-none">
+                      <Markdown>**Управление**: Переключение вкладок и навигация по приложению.</Markdown>
+                    </div>
                   </li>
                 </ul>
               </div>

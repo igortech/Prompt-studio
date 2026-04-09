@@ -3,7 +3,11 @@ import prisma from '../services/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getDecryptedKey } from '../services/crypto.js';
 import { GoogleGenAI } from '@google/genai';
-import { getAnalysisPrompt, getImprovePrompt, getEvalPrompt, getChatSystemInstruction } from '../prompts/systemPrompts.js';
+import { generateContentWithRetry, ThinkingLevel } from '../services/ai.js';
+import { getAnalysisPrompt, getImprovePrompt, getEvalPrompt, getChatSystemInstruction, getPromptGenerationPrompt, getPromptExtractionPrompt, getPromptMetadataExtractionPrompt, getTestOptimizationPrompt } from '../prompts/systemPrompts.js';
+import { AI_CONFIG } from '../config/ai.js';
+
+import { logger } from '../services/logger.js';
 
 const router = express.Router();
 
@@ -85,6 +89,12 @@ router.put('/:id', requireAuth, async (req: any, res) => {
           where: { id: { in: versionsToDelete } }
         });
       }
+    } else if (versions.length > 0 && finalAnalysis !== undefined) {
+      // If content is the same, but analysis is provided, update the latest version's analysis
+      await prisma.promptVersion.update({
+        where: { id: versions[0].id },
+        data: { analysis: finalAnalysis }
+      });
     }
   }
 
@@ -209,19 +219,37 @@ router.post('/:id/analyze', requireAuth, async (req: any, res) => {
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     const provider = user?.analysisProvider || 'google';
-    const model = user?.analysisModel || 'gemini-3-flash-preview';
+    const model = user?.analysisModel;
 
+    if (!model) {
+      return res.status(400).json({ error: 'Модель для анализа не выбрана в настройках' });
+    }
+
+    logger.info('Analyzing prompt', { promptId: prompt.id, model, provider });
     const analysisPrompt = getAnalysisPrompt(prompt.content);
-    let analysisResult = {};
+    let analysisResult: any = {};
+
+    const userKey = await getDecryptedKey(req.user.id, 'google');
+    const apiKey = userKey || process.env.GEMINI_API_KEY;
 
     if (provider === 'google') {
-      throw new Error('Analysis for Google provider should be handled on the frontend');
+      if (!apiKey) throw new Error('Google Gemini API key is not configured');
+      const response = await generateContentWithRetry(apiKey, {
+        model,
+        contents: analysisPrompt,
+        config: { 
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.analysis }
+        }
+      });
+      analysisResult = JSON.parse(response.text || '{}');
     } else if (provider === 'ollama') {
       const userKey = await getDecryptedKey(req.user.id, 'ollama');
       if (!userKey) throw new Error('Ollama API key is not configured in settings');
       const endpoint = process.env.OLLAMA_ENDPOINT;
       if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
       
+      logger.info('Analyze Request (Ollama)', { model, prompt: analysisPrompt });
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -233,8 +261,13 @@ router.post('/:id/analyze', requireAuth, async (req: any, res) => {
         })
       });
       
-      if (!response.ok) throw new Error(`Ollama error: ${await response.text()}`);
+      if (!response.ok) {
+        const err = await response.text();
+        logger.error('Analyze Error (Ollama)', err);
+        throw new Error(`Ollama error: ${err}`);
+      }
       const data = await response.json();
+      logger.info('Analyze Response (Ollama)', { model, response: data.response });
       analysisResult = JSON.parse(data.response || '{}');
     }
 
@@ -254,19 +287,37 @@ router.post('/:id/improve', requireAuth, async (req: any, res) => {
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     const provider = user?.improvementProvider || 'google';
-    const model = user?.improvementModel || 'gemini-3-flash-preview';
+    const model = user?.improvementModel;
 
+    if (!model) {
+      return res.status(400).json({ error: 'Модель для улучшения не выбрана в настройках' });
+    }
+
+    logger.info('Improving prompt', { promptId: prompt.id, model, provider });
     const improvePrompt = getImprovePrompt(prompt.content, analysisResult);
-    let improveResult = {};
+    let improveResult: any = {};
+
+    const userKey = await getDecryptedKey(req.user.id, 'google');
+    const apiKey = userKey || process.env.GEMINI_API_KEY;
 
     if (provider === 'google') {
-      throw new Error('Improvement for Google provider should be handled on the frontend');
+      if (!apiKey) throw new Error('Google Gemini API key is not configured');
+      const response = await generateContentWithRetry(apiKey, {
+        model,
+        contents: improvePrompt,
+        config: { 
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.improvement }
+        }
+      });
+      improveResult = JSON.parse(response.text || '{}');
     } else if (provider === 'ollama') {
       const userKey = await getDecryptedKey(req.user.id, 'ollama');
       if (!userKey) throw new Error('Ollama API key is not configured in settings');
       const endpoint = process.env.OLLAMA_ENDPOINT;
       if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
       
+      logger.info('Improve Request (Ollama)', { model, prompt: improvePrompt });
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -278,8 +329,13 @@ router.post('/:id/improve', requireAuth, async (req: any, res) => {
         })
       });
       
-      if (!response.ok) throw new Error(`Ollama error: ${await response.text()}`);
+      if (!response.ok) {
+        const err = await response.text();
+        logger.error('Improve Error (Ollama)', err);
+        throw new Error(`Ollama error: ${err}`);
+      }
       const data = await response.json();
+      logger.info('Improve Response (Ollama)', { model, response: data.response });
       improveResult = JSON.parse(data.response || '{}');
     }
 
@@ -299,21 +355,48 @@ router.post('/:id/improvement-chat', requireAuth, async (req: any, res) => {
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     const provider = user?.improvementProvider || 'google';
-    const model = user?.improvementModel || 'gemini-3-flash-preview';
+    const model = user?.improvementModel;
 
-    // Get recent chat messages for context
+    if (!model) {
+      return res.status(400).json({ error: 'Модель для улучшения не выбрана в настройках' });
+    }
+
+    logger.info('Chat with prompt', { promptId: prompt.id, model, provider });
+    // Get recent chat messages for context (only 3 messages by default)
     const testHistory = await prisma.message.findMany({
       where: { promptId: prompt.id },
       orderBy: { createdAt: 'desc' },
-      take: 10
+      take: 3
     });
 
     const analysisResult = prompt.analysis ? JSON.parse(prompt.analysis) : null;
     const systemInstruction = getChatSystemInstruction(prompt.content, testHistory.reverse(), analysisResult);
-    let result = { message: '', action: 'none', full_prompt_preview: '', suggested_changes: { reasoning: '' } };
+    let result: any = { message: '', action: 'none', full_prompt_preview: '', suggested_changes: { reasoning: '' } };
+
+    const userKey = await getDecryptedKey(req.user.id, 'google');
+    const apiKey = userKey || process.env.GEMINI_API_KEY;
 
     if (provider === 'google') {
-      throw new Error('Improvement chat for Google provider should be handled on the frontend');
+      if (!apiKey) throw new Error('Google Gemini API key is not configured');
+      
+      const messages = [
+        ...history.map((msg: any) => ({ 
+          role: msg.role === 'assistant' ? 'model' : 'user', 
+          parts: [{ text: msg.content }] 
+        })),
+        { role: 'user', parts: [{ text: message }] }
+      ];
+
+      const response = await generateContentWithRetry(apiKey, {
+        model,
+        contents: messages,
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.improvement }
+        }
+      });
+      result = JSON.parse(response.text || '{}');
     } else if (provider === 'ollama') {
       const userKey = await getDecryptedKey(req.user.id, 'ollama');
       if (!userKey) throw new Error('Ollama API key is not configured in settings');
@@ -386,10 +469,15 @@ router.post('/:id/run-tests', requireAuth, async (req: any, res) => {
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     const testProvider = user?.testProvider || 'google';
-    const testModel = user?.testModel || 'gemini-3.1-flash-lite-preview';
+    const testModel = user?.testModel;
     const analysisProvider = user?.analysisProvider || 'google';
-    const analysisModel = user?.analysisModel || 'gemini-3-flash-preview';
+    const analysisModel = user?.analysisModel;
 
+    if (!testModel || !analysisModel) {
+      return res.status(400).json({ error: 'Модели для тестирования или анализа не выбраны в настройках' });
+    }
+
+    logger.info('Running all tests', { promptId: prompt.id, testModel, analysisModel });
     const results = [];
     let totalScore = 0;
 
@@ -399,7 +487,7 @@ router.post('/:id/run-tests', requireAuth, async (req: any, res) => {
       let actualOutput = '';
       try {
         if (testProvider === 'google') {
-          const genResponse = await ai.models.generateContent({
+          const genResponse = await generateContentWithRetry(apiKey, {
             model: testModel,
             contents: tc.input,
             config: {
@@ -435,10 +523,13 @@ router.post('/:id/run-tests', requireAuth, async (req: any, res) => {
       let evaluation = { score: 0, reasoning: 'Failed to evaluate', passed: false, metrics: {} };
       try {
         if (analysisProvider === 'google') {
-          const evalResponse = await ai.models.generateContent({
+          const evalResponse = await generateContentWithRetry(apiKey, {
             model: analysisModel,
             contents: evalPrompt,
-            config: { responseMimeType: 'application/json' }
+            config: { 
+              responseMimeType: 'application/json',
+              thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.evaluation }
+            }
           });
           evaluation = JSON.parse(evalResponse.text || '{}');
         } else if (analysisProvider === 'ollama') {
@@ -486,6 +577,146 @@ router.post('/:id/run-tests', requireAuth, async (req: any, res) => {
     });
 
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate Prompt from Fields
+router.post('/generate-from-fields', requireAuth, async (req: any, res) => {
+  try {
+    const { fields } = req.body;
+    const userKey = await getDecryptedKey(req.user.id, 'google');
+    const apiKey = userKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('Google Gemini API key is not configured');
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const model = user?.analysisModel;
+
+    if (!model) {
+      return res.status(400).json({ error: 'Модель для генерации не выбрана в настройках' });
+    }
+
+    logger.info('Generating prompt from fields', { model });
+    const prompt = getPromptGenerationPrompt(fields);
+    const response = await generateContentWithRetry(apiKey, {
+      model: model,
+      contents: prompt,
+      config: { 
+        responseMimeType: 'application/json',
+        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.generation }
+      }
+    });
+    
+    res.json(JSON.parse(response.text || '{}'));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Extract Fields from Text
+router.post('/extract-fields', requireAuth, async (req: any, res) => {
+  try {
+    const { text } = req.body;
+    const userKey = await getDecryptedKey(req.user.id, 'google');
+    const apiKey = userKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('Google Gemini API key is not configured');
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const model = user?.analysisModel;
+
+    if (!model) {
+      return res.status(400).json({ error: 'Модель для извлечения не выбрана в настройках' });
+    }
+
+    logger.info('Extracting fields from text', { model });
+    const prompt = getPromptExtractionPrompt(text);
+    const response = await generateContentWithRetry(apiKey, {
+      model: model,
+      contents: prompt,
+      config: { 
+        responseMimeType: 'application/json',
+        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.extraction }
+      }
+    });
+    
+    res.json(JSON.parse(response.text || '{}'));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Extract Metadata from Prompt
+router.post('/extract-metadata', requireAuth, async (req: any, res) => {
+  try {
+    const { text } = req.body;
+    const userKey = await getDecryptedKey(req.user.id, 'google');
+    const apiKey = userKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('Google Gemini API key is not configured');
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const model = user?.analysisModel;
+
+    if (!model) {
+      return res.status(400).json({ error: 'Модель для извлечения метаданных не выбрана в настройках' });
+    }
+
+    logger.info('Extracting metadata from prompt', { model });
+    const prompt = getPromptMetadataExtractionPrompt(text);
+    const response = await generateContentWithRetry(apiKey, {
+      model: model,
+      contents: prompt,
+      config: { 
+        responseMimeType: 'application/json',
+        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.extraction }
+      }
+    });
+    
+    res.json(JSON.parse(response.text || '{}'));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Optimize Prompt from Test Results
+router.post('/:id/optimize-from-tests', requireAuth, async (req: any, res) => {
+  try {
+    const promptId = req.params.id;
+    const { testResults } = req.body;
+    
+    if (!testResults || !testResults.results || testResults.results.length === 0) {
+      return res.status(400).json({ error: 'No test results provided' });
+    }
+
+    const prompt = await prisma.prompt.findUnique({ where: { id: promptId } });
+    if (!prompt || prompt.userId !== req.user.id) return res.status(404).json({ error: 'Prompt not found' });
+
+    const userKey = await getDecryptedKey(req.user.id, 'google');
+    const apiKey = userKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('Google Gemini API key is not configured');
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const improvementModel = user?.improvementModel;
+
+    if (!improvementModel) {
+      return res.status(400).json({ error: 'Модель для улучшения не выбрана в настройках' });
+    }
+
+    logger.info('Optimizing prompt from tests', { promptId, model: improvementModel });
+    
+    const optimizationPrompt = getTestOptimizationPrompt(prompt.content, testResults);
+    
+    const response = await generateContentWithRetry(apiKey, {
+      model: improvementModel,
+      contents: optimizationPrompt,
+      config: { 
+        responseMimeType: 'application/json',
+        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.improvement }
+      }
+    });
+
+    res.json(JSON.parse(response.text || '{}'));
+  } catch (error: any) {
+    logger.error('Optimization error', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });

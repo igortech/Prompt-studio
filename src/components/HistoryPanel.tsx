@@ -7,6 +7,8 @@ export function HistoryPanel() {
   const { currentPrompt, updatePrompt } = useStore();
   const [compareVersion, setCompareVersion] = useState<any>(null);
   const [viewMode, setViewMode] = useState<'edit' | 'diff'>('diff');
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const getScoreColor = (score: number) => {
     if (score >= 8.5) return 'text-emerald-500';
@@ -84,7 +86,8 @@ export function HistoryPanel() {
                       factual: 'Факты', style: 'Стиль', safety: 'Безопасность',
                       completeness: 'Полнота', consistency: 'Логичность',
                       clarity: 'Ясность', accuracy: 'Точность',
-                      conciseness: 'Краткость', tone: 'Тон', format: 'Формат'
+                      conciseness: 'Краткость', efficiency: 'Эффективность',
+                      tone: 'Тон', format: 'Формат'
                     };
                     return (
                       <div key={key} className="flex justify-between items-center text-xs">
@@ -97,28 +100,56 @@ export function HistoryPanel() {
               </div>
             )}
 
-            <button 
-              onClick={async () => {
-                if (window.confirm(`Вы уверены, что хотите восстановить версию ${compareVersion.version}?`)) {
-                  await updatePrompt(currentPrompt.id, { 
-                    content: compareVersion.content, 
-                    analysis: compareVersion.analysis,
-                    saveVersion: true, 
-                    changeNote: `Восстановлено из версии ${compareVersion.version}` 
-                  });
-                  setCompareVersion(null);
-                }
-              }}
-              className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-md active:scale-95"
-            >
-              Восстановить эту версию
-            </button>
+            {showConfirm ? (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 p-4 rounded-xl space-y-3">
+                <div className="text-xs font-medium text-amber-800 dark:text-amber-400">
+                  Вы уверены, что хотите восстановить версию {compareVersion.version}? Текущий текст будет заменен.
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={async () => {
+                      setIsRestoring(true);
+                      try {
+                        await updatePrompt(currentPrompt.id, { 
+                          content: compareVersion.content, 
+                          analysis: compareVersion.analysis,
+                          saveVersion: true, 
+                          changeNote: `Восстановлено из версии ${compareVersion.version}` 
+                        });
+                        setCompareVersion(null);
+                        setShowConfirm(false);
+                      } finally {
+                        setIsRestoring(false);
+                      }
+                    }}
+                    disabled={isRestoring}
+                    className="flex-1 bg-amber-600 text-white py-2 rounded-lg text-xs font-bold hover:bg-amber-700 transition-colors disabled:opacity-50"
+                  >
+                    {isRestoring ? 'Восстановление...' : 'Да, восстановить'}
+                  </button>
+                  <button 
+                    onClick={() => setShowConfirm(false)}
+                    disabled={isRestoring}
+                    className="flex-1 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 py-2 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button 
+                onClick={() => setShowConfirm(true)}
+                className="w-full bg-indigo-600 text-white py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-md active:scale-95"
+              >
+                Восстановить эту версию
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
             {currentPrompt.versions?.map((v: any) => {
               const analysis = v.analysis ? (typeof v.analysis === 'string' ? JSON.parse(v.analysis) : v.analysis) : null;
-              const overallScore = analysis?.overall_score;
+              const overallScore = analysis?.overall_score ?? analysis?.overallScore;
               const isCurrent = v.content === currentPrompt.content;
               
               return (

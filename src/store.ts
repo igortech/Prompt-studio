@@ -1,6 +1,4 @@
 import { create } from 'zustand';
-import { GoogleGenAI } from '@google/genai';
-import { getAnalysisPrompt, getImprovePrompt, getChatSystemInstruction, getEvalPrompt } from './prompts/systemPrompts';
 
 const apiFetch = async (url: string, options: RequestInit = {}) => {
   const token = localStorage.getItem('token');
@@ -123,6 +121,7 @@ export type TestResult = {
     relevance?: number;
     clarity?: number;
     accuracy?: number;
+    conciseness?: number;
   };
 };
 
@@ -156,12 +155,14 @@ type Store = {
   notifications: Notification[];
   theme: 'light' | 'dark';
   activeMiddleTab: 'improvement' | 'analysis' | 'testing' | 'history';
+  showTestChat: boolean;
   
   checkAuth: () => Promise<void>;
   logout: () => Promise<void>;
   toggleTheme: () => void;
   setTheme: (theme: 'light' | 'dark') => void;
   setActiveMiddleTab: (tab: 'improvement' | 'analysis' | 'testing' | 'history') => void;
+  setShowTestChat: (show: boolean) => void;
   updateSettings: (settings: {
     geminiKey?: string;
     ollamaKey?: string;
@@ -186,6 +187,7 @@ type Store = {
   rejectImprovement: (messageId: string) => void;
   analyzePrompt: () => Promise<void>;
   improvePrompt: () => Promise<void>;
+  optimizeFromTests: () => Promise<void>;
 
   fetchTestCases: () => Promise<void>;
   createTestCase: (data: Partial<TestCase>) => Promise<void>;
@@ -222,6 +224,7 @@ export const useStore = create<Store>((set, get) => ({
   notifications: [],
   theme: (localStorage.getItem('theme') as 'light' | 'dark') || 'dark',
   activeMiddleTab: 'analysis',
+  showTestChat: false,
 
   rejectImprovement: (messageId: string) => {
     set((state) => ({
@@ -260,6 +263,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   setActiveMiddleTab: (tab) => set({ activeMiddleTab: tab }),
+  setShowTestChat: (show) => set({ showTestChat: show }),
 
   checkAuth: async () => {
     try {
@@ -484,7 +488,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   sendImprovementMessage: async (content) => {
-    const { currentPrompt, improvementMessages, user, messages, evaluation } = get();
+    const { currentPrompt, improvementMessages, user, messages, evaluation, setActiveMiddleTab, setShowTestChat, analyzePrompt, runTests, createTestCase } = get();
     if (!currentPrompt || !user) return;
 
     const tempId = Date.now().toString();
@@ -494,47 +498,11 @@ export const useStore = create<Store>((set, get) => ({
     }));
 
     try {
-      const provider = user.improvementProvider || 'google';
-      const model = user.improvementModel || 'gemini-3-flash-preview';
-      const history = improvementMessages.map(m => ({ role: m.role, content: m.content }));
-
-      let data;
-      if (provider === 'google') {
-        const keys = await apiFetch('/api/auth/keys');
-        const apiKey = keys.google;
-        if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
-
-        // Get recent chat messages for context
-        const recentMessages = messages.slice(-10);
-        const systemInstruction = getChatSystemInstruction(currentPrompt.content, recentMessages, evaluation);
-
-        const ai = new GoogleGenAI({ apiKey });
-        const response = await ai.models.generateContent({
-          model,
-          contents: [
-            ...history.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-            { role: 'user', parts: [{ text: content }] }
-          ],
-          config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-          }
-        });
-        
-        const result = JSON.parse(response.text || '{}');
-        data = {
-          text: result.message,
-          has_changes: result.action === 'suggest' || result.action === 'apply',
-          improved_prompt: result.full_prompt_preview,
-          diff_summary: result.suggested_changes?.reasoning || 'Предложения ИИ'
-        };
-      } else {
-        data = await apiFetch(`/api/prompts/${currentPrompt.id}/improvement-chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: content, history }),
-        });
-      }
+      const data = await apiFetch(`/api/prompts/${currentPrompt.id}/improvement-chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: content, history: improvementMessages.map(m => ({ role: m.role, content: m.content })) }),
+      });
       
       set((state) => ({
         improvementMessages: [...state.improvementMessages, {
@@ -546,6 +514,56 @@ export const useStore = create<Store>((set, get) => ({
           diffSummary: data.diff_summary
         }]
       }));
+
+      // Handle AI Commands
+      if (data.commands && Array.isArray(data.commands)) {
+        for (const cmd of data.commands) {
+          switch (cmd.type) {
+            case 'switch_tab':
+              if (cmd.tab) setActiveMiddleTab(cmd.tab as any);
+              if (cmd.tab === 'test_chat') setShowTestChat(true);
+              else if (['history', 'analysis', 'testing', 'improvement'].includes(cmd.tab)) setShowTestChat(false);
+              break;
+            case 'analyze':
+              setActiveMiddleTab('analysis');
+              setShowTestChat(false);
+              analyzePrompt();
+              break;
+            case 'run_tests':
+              setActiveMiddleTab('testing');
+              setShowTestChat(false);
+              runTests();
+              break;
+            case 'create_test':
+              if (cmd.input) {
+                await createTestCase({ input: cmd.input, expectedOutput: cmd.expected || '' });
+                setActiveMiddleTab('testing');
+                setShowTestChat(false);
+              }
+              break;
+            case 'open_test_chat':
+              setShowTestChat(true);
+              if (cmd.message) {
+                // We could potentially inject a message into the test chat here
+                // For now just opening it is a good start
+              }
+              break;
+            case 'apply_changes':
+              const lastChange = [...get().improvementMessages].reverse().find(m => m.hasChanges && m.improvedPrompt);
+              if (lastChange && lastChange.improvedPrompt) {
+                await get().updatePrompt(currentPrompt.id, { 
+                  content: lastChange.improvedPrompt,
+                  saveVersion: true,
+                  changeNote: lastChange.diffSummary || 'Применены предложения ИИ',
+                  analysis: null
+                });
+                get().addNotification('success', 'Изменения применены');
+                setActiveMiddleTab('analysis');
+              }
+              break;
+          }
+        }
+      }
     } catch (e: any) {
       console.error(e);
       get().addNotification('error', e.message || 'Не удалось отправить сообщение');
@@ -561,41 +579,14 @@ export const useStore = create<Store>((set, get) => ({
     
     set({ isAnalyzing: true });
     try {
-      const provider = user.analysisProvider || 'google';
-      const model = user.analysisModel || 'gemini-3-flash-preview';
-
-      if (provider === 'google') {
-        const keys = await apiFetch('/api/auth/keys');
-        const apiKey = keys.google;
-        if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
-
-        const analysisPrompt = getAnalysisPrompt(currentPrompt.content);
-
-        const ai = new GoogleGenAI({ apiKey });
-        const response = await ai.models.generateContent({
-          model,
-          contents: analysisPrompt,
-          config: { responseMimeType: 'application/json' }
-        });
-        
-        const data = JSON.parse(response.text || '{}');
-        set({ evaluation: data });
-        // Save analysis to the backend and create a version if content changed
-        await get().updatePrompt(currentPrompt.id, { 
-          analysis: data,
-          saveVersion: true,
-          changeNote: 'Анализ промпта'
-        });
-      } else {
-        const data = await apiFetch(`/api/prompts/${currentPrompt.id}/analyze`, { method: 'POST' });
-        set({ evaluation: data });
-        // Save analysis to the backend and create a version if content changed
-        await get().updatePrompt(currentPrompt.id, { 
-          analysis: data,
-          saveVersion: true,
-          changeNote: 'Анализ промпта'
-        });
-      }
+      const data = await apiFetch(`/api/prompts/${currentPrompt.id}/analyze`, { method: 'POST' });
+      set({ evaluation: data });
+      // Save analysis to the backend and create a version if content changed
+      await get().updatePrompt(currentPrompt.id, { 
+        analysis: data,
+        saveVersion: true,
+        changeNote: 'Анализ промпта'
+      });
     } catch (e: any) {
       console.error(e);
       get().addNotification('error', e.message || 'Не удалось проанализировать промпт');
@@ -610,30 +601,11 @@ export const useStore = create<Store>((set, get) => ({
     
     set({ isImproving: true });
     try {
-      const provider = user.improvementProvider || 'google';
-      const model = user.improvementModel || 'gemini-3-flash-preview';
-
-      let data;
-      if (provider === 'google') {
-        const keys = await apiFetch('/api/auth/keys');
-        const apiKey = keys.google;
-        if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
-
-        const improvePrompt = getImprovePrompt(currentPrompt.content, evaluation);
-        const ai = new GoogleGenAI({ apiKey });
-        const response = await ai.models.generateContent({
-          model,
-          contents: improvePrompt,
-          config: { responseMimeType: 'application/json' }
-        });
-        data = JSON.parse(response.text || '{}');
-      } else {
-        data = await apiFetch(`/api/prompts/${currentPrompt.id}/improve`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ analysisResult: evaluation }),
-        });
-      }
+      const data = await apiFetch(`/api/prompts/${currentPrompt.id}/improve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ analysisResult: evaluation }),
+      });
       
       // Convert the old recommendations format into a chat message
       const content = `Вот мой анализ и предложения по улучшению:\n\n**Анализ:** ${data.analysis}\n\n**Предложения:**\n${data.suggestions?.map((s: any) => `- **${s.priority === 'high' ? 'Высокий' : s.priority === 'medium' ? 'Средний' : 'Низкий'} приоритет**: ${s.diff}\n  *Обоснование*: ${s.reasoning}\n  *Ожидаемый эффект*: ${s.expected_effect}`).join('\n')}\n\n**Риски:**\n${data.risks?.map((r: string) => `- ${r}`).join('\n')}`;
@@ -651,6 +623,42 @@ export const useStore = create<Store>((set, get) => ({
     } catch (e: any) {
       console.error(e);
       get().addNotification('error', e.message || 'Не удалось улучшить промпт');
+    } finally {
+      set({ isImproving: false });
+    }
+  },
+
+  optimizeFromTests: async () => {
+    const { currentPrompt, testResults, user } = get();
+    if (!currentPrompt || !user || !testResults) return;
+    
+    set({ isImproving: true });
+    try {
+      const data = await apiFetch(`/api/prompts/${currentPrompt.id}/optimize-from-tests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ testResults }),
+      });
+      
+      const content = `Вот мой анализ результатов тестирования и предложения по улучшению:\n\n**Отчет по тестам:**\n${data.analysis_report}\n\n**Рекомендации:**\n${data.recommendations?.map((r: string) => `- ${r}`).join('\n')}`;
+
+      set((state) => ({
+        improvementMessages: [...state.improvementMessages, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content,
+          hasChanges: !!data.improved_prompt,
+          improvedPrompt: data.improved_prompt,
+          diffSummary: 'Оптимизация на основе упавших тестов.'
+        }]
+      }));
+      
+      // Switch to improvement tab to show the results
+      get().setActiveMiddleTab('improvement');
+      get().addNotification('success', 'Промпт успешно оптимизирован на основе тестов');
+    } catch (e: any) {
+      console.error(e);
+      get().addNotification('error', e.message || 'Не удалось оптимизировать промпт');
     } finally {
       set({ isImproving: false });
     }
@@ -737,20 +745,12 @@ export const useStore = create<Store>((set, get) => ({
     if (!user) return;
     
     try {
-      const keys = await apiFetch('/api/auth/keys');
-      const apiKey = keys.google;
-      if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
-
-      const { getPromptGenerationPrompt } = await import('./prompts/systemPrompts');
-      const prompt = getPromptGenerationPrompt(fields);
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: { responseMimeType: 'application/json' }
+      const data = await apiFetch('/api/prompts/generate-from-fields', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields }),
       });
-      
-      return JSON.parse(response.text || '{}');
+      return data;
     } catch (e: any) {
       console.error(e);
       get().addNotification('error', e.message || 'Не удалось сгенерировать промпт');
@@ -763,20 +763,12 @@ export const useStore = create<Store>((set, get) => ({
     if (!user) return;
     
     try {
-      const keys = await apiFetch('/api/auth/keys');
-      const apiKey = keys.google;
-      if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
-
-      const { getPromptExtractionPrompt } = await import('./prompts/systemPrompts');
-      const prompt = getPromptExtractionPrompt(text);
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: { responseMimeType: 'application/json' }
+      const data = await apiFetch('/api/prompts/extract-fields', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
       });
-      
-      return JSON.parse(response.text || '{}');
+      return data;
     } catch (e: any) {
       console.error(e);
       get().addNotification('error', e.message || 'Не удалось извлечь поля из текста');
@@ -789,20 +781,12 @@ export const useStore = create<Store>((set, get) => ({
     if (!user) return;
     
     try {
-      const keys = await apiFetch('/api/auth/keys');
-      const apiKey = keys.google;
-      if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
-
-      const { getPromptMetadataExtractionPrompt } = await import('./prompts/systemPrompts');
-      const prompt = getPromptMetadataExtractionPrompt(text);
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: { responseMimeType: 'application/json' }
+      const data = await apiFetch('/api/prompts/extract-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
       });
-      
-      return JSON.parse(response.text || '{}');
+      return data;
     } catch (e: any) {
       console.error(e);
       get().addNotification('error', e.message || 'Не удалось извлечь метаданные из промпта');
@@ -812,23 +796,12 @@ export const useStore = create<Store>((set, get) => ({
 
   testApiKey: async (provider: string, key: string) => {
     try {
-      if (provider === 'google') {
-        const ai = new GoogleGenAI({ apiKey: key });
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: 'Say "ok"',
-        });
-        return !!response.text;
-      } else if (provider === 'ollama') {
-        // Simple health check for Ollama Cloud if we have an endpoint
-        // For now, we'll just check if it's not empty and assume it's valid if the server accepts it
-        // Or we can try to call a dummy endpoint
-        const response = await fetch('https://api.ollama.com/v1/models', {
-          headers: { 'Authorization': `Bearer ${key}` }
-        });
-        return response.ok;
-      }
-      return false;
+      const data = await apiFetch('/api/auth/test-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, key }),
+      });
+      return data.success;
     } catch (e) {
       console.error('API Key test failed:', e);
       return false;

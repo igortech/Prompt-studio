@@ -33,6 +33,7 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
         clarity: 'Ясность',
         accuracy: 'Точность',
         conciseness: 'Краткость',
+        efficiency: 'Эффективность',
         tone: 'Тон',
         format: 'Формат'
       };
@@ -274,6 +275,7 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
                         clarity: 'Ясность',
                         accuracy: 'Точность',
                         conciseness: 'Краткость',
+                        efficiency: 'Эффективность',
                         tone: 'Тон',
                         format: 'Формат'
                       };
@@ -377,9 +379,20 @@ export function EvaluationPanel({ view }: { view?: 'analysis' | 'tests' }) {
                     {testResults.overallScore}/10
                   </span>
                 </div>
-                <div className="text-sm text-slate-600 dark:text-slate-400">
+                <div className="text-sm text-slate-600 dark:text-slate-400 mb-4">
                   Пройдено {testResults.passedCount} из {testResults.totalCount} тестов
                 </div>
+                <button
+                  onClick={() => useStore.getState().optimizeFromTests()}
+                  disabled={isImproving}
+                  className="w-full bg-indigo-600 text-white py-2 rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50"
+                >
+                  {isImproving ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Анализ и оптимизация...</>
+                  ) : (
+                    <><Sparkles className="w-4 h-4" /> Оптимизировать промпт по тестам</>
+                  )}
+                </button>
               </div>
             )}
 
@@ -538,6 +551,7 @@ function getMetricIcon(key: string) {
   if (k.includes('accuracy') || k.includes('точность')) return <Target className="w-3.5 h-3.5" />;
   if (k.includes('safety') || k.includes('безопасность')) return <ShieldCheck className="w-3.5 h-3.5" />;
   if (k.includes('conciseness') || k.includes('краткость')) return <Minimize2 className="w-3.5 h-3.5" />;
+  if (k.includes('efficiency') || k.includes('эффективность')) return <Play className="w-3.5 h-3.5" />;
   if (k.includes('tone') || k.includes('стиль')) return <MessageSquare className="w-3.5 h-3.5" />;
   if (k.includes('format') || k.includes('формат')) return <Layout className="w-3.5 h-3.5" />;
   return <BarChart2 className="w-3.5 h-3.5" />;

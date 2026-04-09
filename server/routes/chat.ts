@@ -2,7 +2,11 @@ import express from 'express';
 import prisma from '../services/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getDecryptedKey } from '../services/crypto.js';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { sendMessageWithRetry } from '../services/ai.js';
+import { AI_CONFIG } from '../config/ai.js';
+
+import { logger } from '../services/logger.js';
 
 const router = express.Router();
 
@@ -27,8 +31,13 @@ router.post('/prompt/:promptId', requireAuth, async (req: any, res) => {
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     const finalProvider = provider || user?.testProvider || 'google';
-    const finalModel = model || user?.testModel || 'gemini-3.1-flash-lite-preview';
+    const finalModel = model || user?.testModel;
 
+    if (!finalModel) {
+      return res.status(400).json({ error: 'Модель для теста не выбрана в настройках' });
+    }
+
+    logger.info('Sending chat message', { promptId, model: finalModel, provider: finalProvider });
     // Save user message
     const userMsg = await prisma.message.create({
       data: { promptId, role: 'user', content }
@@ -73,12 +82,15 @@ router.post('/prompt/:promptId', requireAuth, async (req: any, res) => {
         model: finalModel,
         config: {
           systemInstruction,
+          thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.testChat }
         },
         history: formattedHistory
       });
 
       const aiStartTime = Date.now();
-      const response = await chat.sendMessage({ message: content });
+      logger.info('Chat Request (Google)', { model: finalModel, history: formattedHistory, message: content });
+      const response = await sendMessageWithRetry(chat, content);
+      logger.info('Chat Response (Google)', { model: finalModel, text: response.text });
       console.log(`[Chat] AI response took ${Date.now() - aiStartTime}ms`);
       assistantContent = response.text || '';
       latencyMs = Date.now() - startTime;
@@ -123,6 +135,7 @@ router.post('/prompt/:promptId', requireAuth, async (req: any, res) => {
         { role: 'user', content }
       ];
 
+      logger.info('Chat Request (Ollama)', { model: finalModel, messages });
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,10 +148,12 @@ router.post('/prompt/:promptId', requireAuth, async (req: any, res) => {
 
       if (!response.ok) {
         const err = await response.text();
+        logger.error('Chat Error (Ollama)', err);
         throw new Error(`Ollama error: ${err}`);
       }
 
       const data = await response.json();
+      logger.info('Chat Response (Ollama)', { model: finalModel, text: data.message?.content });
       assistantContent = data.message?.content || '';
       latencyMs = Date.now() - startTime;
 
@@ -198,8 +213,13 @@ router.post('/prompt/:promptId/replay', requireAuth, async (req: any, res) => {
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     const finalProvider = user?.testProvider || 'google';
-    const finalModel = user?.testModel || 'gemini-3.1-flash-lite-preview';
+    const finalModel = user?.testModel;
 
+    if (!finalModel) {
+      return res.status(400).json({ error: 'Модель для теста не выбрана в настройках' });
+    }
+
+    logger.info('Replaying chat', { promptId, model: finalModel, provider: finalProvider });
     // Get all user messages
     const history = await prisma.message.findMany({
       where: { promptId, role: 'user' },
@@ -221,7 +241,10 @@ router.post('/prompt/:promptId/replay', requireAuth, async (req: any, res) => {
     const results = [];
     const chat = ai.chats.create({
       model: finalModel,
-      config: { systemInstruction: promptContent }
+      config: { 
+        systemInstruction: promptContent,
+        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.testChat }
+      }
     });
 
     for (const msg of history) {

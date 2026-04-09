@@ -11,12 +11,12 @@ export function TestChat() {
   const [isSending, setIsSending] = useState(false);
   const [provider, setProvider] = useState(user?.testProvider || 'google');
   const [model, setModel] = useState(user?.testModel || GOOGLE_MODELS[0].id);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const handleClear = async () => {
-    if (window.confirm('Очистить историю чата?')) {
-      await clearMessages();
-    }
+    await clearMessages();
+    setShowClearConfirm(false);
   };
 
   useEffect(() => {
@@ -55,7 +55,7 @@ export function TestChat() {
             <Bot className="w-5 h-5 text-indigo-500 shrink-0" />
             <span className="truncate">Тестовый чат</span>
           </h2>
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0 relative">
             {messages.length > 0 && (
               <>
                 <button
@@ -68,13 +68,40 @@ export function TestChat() {
                   <span className="hidden sm:inline">Перетестировать</span>
                 </button>
                 <button
-                  onClick={handleClear}
+                  onClick={() => setShowClearConfirm(true)}
                   disabled={isTesting || isSending}
                   className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-500 hover:text-red-500 transition-colors disabled:opacity-50"
                   title="Очистить чат"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
+
+                <AnimatePresence>
+                  {showClearConfirm && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                      className="absolute right-0 top-full mt-2 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-xl shadow-xl w-48"
+                    >
+                      <p className="text-xs font-medium mb-3">Очистить историю чата?</p>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={handleClear}
+                          className="flex-1 bg-red-600 text-white py-1.5 rounded-lg text-[10px] font-bold hover:bg-red-700 transition-colors"
+                        >
+                          Очистить
+                        </button>
+                        <button 
+                          onClick={() => setShowClearConfirm(false)}
+                          className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 py-1.5 rounded-lg text-[10px] font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                        >
+                          Отмена
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </>
             )}
           </div>

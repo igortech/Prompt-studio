@@ -10,51 +10,11 @@ import { CreatePromptModal } from './CreatePromptModal';
 import { EditPromptModal } from './EditPromptModal';
 import { Settings, LogOut, Moon, Sun, LayoutDashboard, Download, Upload, PlusCircle, Trash2, Edit2, Sparkles, BarChart2, Target, History, Bot, ChevronUp, ChevronDown } from 'lucide-react';
 
-function TestingView() {
-  const [showChat, setShowChat] = useState(false);
-
-  return (
-    <div className="flex-1 flex flex-col relative overflow-hidden">
-      {/* Tests View */}
-      <div className={`absolute inset-0 flex flex-col transition-transform duration-300 ${showChat ? '-translate-y-full' : 'translate-y-0'}`}>
-        <div className="flex-1 overflow-hidden flex flex-col">
-          <EvaluationPanel view="tests" />
-        </div>
-        {/* Bottom Bar to open Chat */}
-        <div 
-          className="h-12 shrink-0 bg-indigo-50 dark:bg-indigo-900/20 border-t border-indigo-100 dark:border-indigo-800/30 flex items-center justify-center cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors group"
-          onClick={() => setShowChat(true)}
-        >
-          <span className="font-semibold text-sm text-indigo-700 dark:text-indigo-300 flex items-center gap-2 group-hover:-translate-y-0.5 transition-transform">
-            <Bot className="w-5 h-5" /> Тестовый чат <ChevronUp className="w-4 h-4 ml-1 opacity-50" />
-          </span>
-        </div>
-      </div>
-
-      {/* Chat View */}
-      <div className={`absolute inset-0 flex flex-col transition-transform duration-300 ${showChat ? 'translate-y-0' : 'translate-y-full'}`}>
-        {/* Top Bar to open Tests */}
-        <div 
-          className="h-12 shrink-0 bg-emerald-50 dark:bg-emerald-900/20 border-b border-emerald-100 dark:border-emerald-800/30 flex items-center justify-center cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors group"
-          onClick={() => setShowChat(false)}
-        >
-          <span className="font-semibold text-sm text-emerald-700 dark:text-emerald-300 flex items-center gap-2 group-hover:translate-y-0.5 transition-transform">
-            <ChevronDown className="w-4 h-4 mr-1 opacity-50" /> Выполнение тестов <Target className="w-5 h-5" />
-          </span>
-        </div>
-        <div className="flex-1 overflow-hidden flex flex-col">
-          <TestChat />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function Layout() {
   const { 
     prompts, currentPrompt, selectPrompt, createPrompt, deletePrompt, 
     user, logout, theme, toggleTheme, exportPrompt, importPrompt,
-    activeMiddleTab, setActiveMiddleTab
+    activeMiddleTab, setActiveMiddleTab, showTestChat, setShowTestChat
   } = useStore();
   const [showSettings, setShowSettings] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -90,19 +50,19 @@ export function Layout() {
     }
   };
 
+  const handleTabClick = (tab: 'history' | 'analysis' | 'testing' | 'improvement') => {
+    setActiveMiddleTab(tab);
+    setShowTestChat(false);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 transition-colors overflow-hidden">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-xl">
-            <LayoutDashboard className="w-6 h-6" />
-            Студия Промптов
-          </div>
-          
-          <div className="flex items-center gap-2 ml-8">
+        <div className="flex items-center gap-4 flex-1">
+          <div className="flex items-center gap-2 flex-1 max-w-2xl">
             <select 
-              className="bg-slate-100 dark:bg-slate-800 border-none rounded-md px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 max-w-[200px] truncate"
+              className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-md px-3 py-1.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-indigo-500 truncate"
               value={currentPrompt?.id || ''}
               onChange={(e) => selectPrompt(e.target.value)}
             >
@@ -215,9 +175,9 @@ export function Layout() {
         {/* Right Panel: Evaluation & Improvement & Testing (40%) */}
         <div className="flex-[4] flex flex-col overflow-hidden bg-white dark:bg-slate-950 min-w-0">
           {/* Tabs Header */}
-          <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-1">
+          <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-1 z-30 relative">
             <button
-              onClick={() => setActiveMiddleTab('history')}
+              onClick={() => handleTabClick('history')}
               className={`flex items-center justify-center px-4 py-2 text-xs font-bold rounded-lg transition-all ${
                 activeMiddleTab === 'history' 
                   ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' 
@@ -228,7 +188,7 @@ export function Layout() {
               <History className="w-4 h-4" />
             </button>
             <button
-              onClick={() => setActiveMiddleTab('analysis')}
+              onClick={() => handleTabClick('analysis')}
               className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${
                 activeMiddleTab === 'analysis' 
                   ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' 
@@ -239,7 +199,7 @@ export function Layout() {
               <span className="hidden lg:inline">Анализ</span>
             </button>
             <button
-              onClick={() => setActiveMiddleTab('testing')}
+              onClick={() => handleTabClick('testing')}
               className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-lg transition-all ${
                 activeMiddleTab === 'testing' 
                   ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' 
@@ -251,12 +211,36 @@ export function Layout() {
             </button>
           </div>
 
-          {/* Tab Content */}
-          <div className="flex-1 overflow-hidden flex flex-col">
-            {activeMiddleTab === 'history' && <HistoryPanel />}
-            {activeMiddleTab === 'analysis' && <EvaluationPanel view="analysis" />}
-            {activeMiddleTab === 'testing' && <TestingView />}
-            {activeMiddleTab === 'improvement' && <EvaluationPanel view="analysis" />}
+          {/* Tab Content and Test Chat Container */}
+          <div className="flex-1 overflow-hidden flex flex-col relative">
+            {/* Main Tab Content */}
+            <div className="absolute inset-0 flex flex-col overflow-hidden pb-12">
+              {activeMiddleTab === 'history' && <HistoryPanel />}
+              {activeMiddleTab === 'analysis' && <EvaluationPanel view="analysis" />}
+              {activeMiddleTab === 'testing' && <EvaluationPanel view="tests" />}
+              {activeMiddleTab === 'improvement' && <EvaluationPanel view="analysis" />}
+            </div>
+
+            {/* Test Chat Overlay */}
+            <div 
+              className="absolute inset-x-0 bottom-0 top-0 flex flex-col transition-transform duration-300 ease-in-out bg-white dark:bg-slate-950 z-20 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] dark:shadow-[0_-4px_20px_rgba(0,0,0,0.2)]"
+              style={{ transform: showTestChat ? 'translateY(0)' : 'translateY(calc(100% - 48px))' }}
+            >
+              {/* The Single Toggle Bar */}
+              <div 
+                className="h-12 shrink-0 bg-indigo-50 dark:bg-indigo-900/20 border-t border-indigo-100 dark:border-indigo-800/30 flex items-center justify-center cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors group"
+                onClick={() => setShowTestChat(!showTestChat)}
+              >
+                <span className="font-semibold text-sm text-indigo-700 dark:text-indigo-300 flex items-center gap-2 group-hover:-translate-y-0.5 transition-transform">
+                  <Bot className="w-5 h-5" /> Чат тестирования {showTestChat ? <ChevronDown className="w-4 h-4 ml-1 opacity-50" /> : <ChevronUp className="w-4 h-4 ml-1 opacity-50" />}
+                </span>
+              </div>
+              
+              {/* Chat Content */}
+              <div className="flex-1 overflow-hidden flex flex-col">
+                <TestChat />
+              </div>
+            </div>
           </div>
         </div>
       </main>

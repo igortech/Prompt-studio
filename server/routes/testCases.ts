@@ -4,6 +4,10 @@ import { requireAuth } from '../middleware/auth.js';
 import { getDecryptedKey } from '../services/crypto.js';
 import { GoogleGenAI, Type } from '@google/genai';
 import { getEvalPrompt, getTestingPrompt } from '../prompts/systemPrompts.js';
+import { generateContentWithRetry, ThinkingLevel } from '../services/ai.js';
+import { AI_CONFIG } from '../config/ai.js';
+
+import { logger } from '../services/logger.js';
 
 const router = express.Router();
 
@@ -21,16 +25,22 @@ router.post('/prompt/:promptId/generate-scenarios', requireAuth, async (req: any
     const ai = new GoogleGenAI({ apiKey });
 
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    const model = user?.analysisModel || 'gemini-3-flash-preview';
+    const model = user?.analysisModel;
 
+    if (!model) {
+      return res.status(400).json({ error: 'Модель для анализа не выбрана в настройках' });
+    }
+
+    logger.info('Generating test scenarios', { promptId, model });
     const systemInstruction = getTestingPrompt(prompt.content, scenarioCount);
 
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithRetry(apiKey, {
       model,
       contents: 'Сгенерируй тестовые сценарии.',
       config: {
         systemInstruction,
         responseMimeType: 'application/json',
+        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.generation },
         responseSchema: {
           type: Type.ARRAY,
           items: {
@@ -162,11 +172,21 @@ router.post('/:id/run', requireAuth, async (req: any, res) => {
     if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
     const ai = new GoogleGenAI({ apiKey });
 
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const testModel = user?.testModel;
+    const analysisModel = user?.analysisModel;
+
+    if (!testModel || !analysisModel) {
+      return res.status(400).json({ error: 'Модели для тестирования или анализа не выбраны в настройках' });
+    }
+
+    logger.info('Running test case', { promptId: testCase.promptId, testCaseId, testModel, analysisModel });
+
     // 1. Generate actual output
     let actualOutput = '';
     try {
-      const genResponse = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+      const genResponse = await generateContentWithRetry(apiKey, {
+        model: testModel,
         contents: testCase.input,
         config: {
           systemInstruction: promptContent,
@@ -174,6 +194,7 @@ router.post('/:id/run', requireAuth, async (req: any, res) => {
       });
       actualOutput = genResponse.text || '';
     } catch (e: any) {
+      logger.error('Failed to generate output for test case', e, { testCaseId });
       actualOutput = `Error generating output: ${e.message}`;
     }
 
@@ -181,13 +202,17 @@ router.post('/:id/run', requireAuth, async (req: any, res) => {
     const evalPrompt = getEvalPrompt(promptContent, testCase.input, testCase.expectedOutput, actualOutput);
     let evaluation = { score: 0, reasoning: 'Failed to evaluate', passed: false, metrics: {} };
     try {
-      const evalResponse = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
+      const evalResponse = await generateContentWithRetry(apiKey, {
+        model: analysisModel,
         contents: evalPrompt,
-        config: { responseMimeType: 'application/json' }
+        config: { 
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.evaluation }
+        }
       });
       evaluation = JSON.parse(evalResponse.text || '{}');
     } catch (e) {
+      logger.error('Failed to evaluate test case', e, { testCaseId });
       console.error('Eval error:', e);
     }
 

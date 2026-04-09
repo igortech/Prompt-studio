@@ -4,6 +4,11 @@ import bcrypt from 'bcryptjs';
 import prisma from '../services/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { encryptKey, getDecryptedKey } from '../services/crypto.js';
+import { GoogleGenAI } from '@google/genai';
+import { generateContentWithRetry } from '../services/ai.js';
+import { AI_CONFIG } from '../config/ai.js';
+
+import { logger } from '../services/logger.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-for-dev';
@@ -64,9 +69,13 @@ router.get('/callback', async (req, res) => {
         data: {
           email: userData.email,
           name: userData.name,
-          picture: userData.picture
+          picture: userData.picture,
+          analysisModel: AI_CONFIG.defaults.models.analysis,
+          improvementModel: AI_CONFIG.defaults.models.improvement,
+          testModel: AI_CONFIG.defaults.models.test
         }
       });
+      logger.info('New user created with default AI settings', { email: user.email });
     }
 
     const token = jwt.sign(
@@ -230,6 +239,42 @@ router.get('/keys', requireAuth, async (req: any, res) => {
   const googleKey = await getDecryptedKey(req.user.id, 'google');
   const ollamaKey = await getDecryptedKey(req.user.id, 'ollama');
   res.json({ google: googleKey, ollama: ollamaKey });
+});
+
+router.post('/test-key', requireAuth, async (req: any, res) => {
+  const { provider, key } = req.body;
+  try {
+    if (provider === 'google') {
+      const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+      const model = user?.testModel;
+
+      if (!model) {
+        return res.status(400).json({ error: 'Модель для теста не выбрана в настройках' });
+      }
+
+      logger.info('Testing Google API key', { model });
+      const response = await generateContentWithRetry(key, {
+        model: model,
+        contents: 'Say "ok"',
+        config: {
+          thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.keyTest }
+        }
+      });
+      return res.json({ success: !!response.text });
+    } else if (provider === 'ollama') {
+      logger.info('Testing Ollama API key');
+      // Simple health check for Ollama Cloud if we have an endpoint
+      const response = await fetch('https://api.ollama.com/v1/models', {
+        headers: { 'Authorization': `Bearer ${key}` }
+      });
+      logger.info('Ollama API key test result', { status: response.status, ok: response.ok });
+      return res.json({ success: response.ok });
+    }
+    res.status(400).json({ error: 'Unsupported provider' });
+  } catch (error: any) {
+    console.error('API Key test failed:', error);
+    res.json({ success: false, error: error.message });
+  }
 });
 
 router.post('/settings', requireAuth, async (req: any, res) => {
