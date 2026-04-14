@@ -1,4 +1,4 @@
-name: Deploy Tokenizer to Production
+name: Deploy to Production
 
 on:
   push:
@@ -36,8 +36,8 @@ jobs:
             git checkout release || git checkout -b release origin/release
             git pull origin release
             npm ci
-            sudo rm -rf dist
-            sudo npm run build
-            sudo chown -R www-data:www-data dist
-            sudo systemctl reload nginx
+            rm -rf dist
+            npm run build
+            sudo -n chown -R www-data:www-data dist
+            sudo -n systemctl reload nginx
             echo "✅ Deployed successfully at $(date)"
