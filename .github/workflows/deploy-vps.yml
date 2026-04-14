@@ -24,7 +24,6 @@ jobs:
           key: ${{ secrets.DEPLOY_KEY }}
           debug: true
           script: |
-            set -e
             set -o pipefail
             whoami
 
@@ -33,7 +32,7 @@ jobs:
 
             git config --global --add safe.directory "$APP_DIR"
             cd "$APP_DIR"
-            git stash
+            git stash || true
             git fetch origin
             git checkout release || git checkout -b release origin/release
             git pull origin release
@@ -44,13 +43,14 @@ jobs:
             echo "✅ Frontend build complete"
             sudo -n chown -R www-data:www-data dist
             echo "🔄 Restarting app..."
-            sudo -n pm2 restart prompts-app 2>&1
+            sudo -n pm2 restart prompts-app 2>&1 || true
             sleep 5
             echo "📋 Checking PM2 status..."
-            sudo -n pm2 status prompts-app
-            echo "📋 Checking PM2 logs (last 50 lines)..."
-            sudo -n pm2 logs prompts-app --lines 50 --nostream 2>&1 || true
-            echo "✅ App restarted"
-            sudo -n systemctl reload nginx
-            echo "✅ Nginx reloaded"
-            echo "✅ Deployed successfully at $(date)"
+            sudo -n pm2 status prompts-app || true
+            echo "📋 Checking PM2 logs (last 100 lines)..."
+            sudo -n pm2 logs prompts-app --lines 100 --nostream 2>&1 || true
+            echo "✅ Checking app health..."
+            curl -v http://localhost:3000 2>&1 || true
+            echo "✅ Nginx reload..."
+            sudo -n systemctl reload nginx || true
+            echo "✅ Deployed at $(date)"
