@@ -41,8 +41,8 @@ jobs:
             echo "📦 Building frontend..."
             sudo -n rm -rf dist
             sudo -n npm run build 2>&1 || { echo "❌ Frontend build failed"; exit 1; }
-            echo "📦 Building server..."
-            sudo -n npm run build:server 2>&1 || { echo "❌ Server build failed"; exit 1; }
+            echo "📦 Compiling server TypeScript..."
+            sudo -n npx tsc -p tsconfig.server.json 2>&1 || { echo "❌ Server compilation failed"; exit 1; }
             sudo -n chown -R www-data:www-data dist
             echo "🔄 Restarting app..."
             sudo -n pm2 restart prompts-app || { echo "❌ PM2 restart failed"; exit 1; }
