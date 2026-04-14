@@ -31,6 +31,7 @@ jobs:
             REPO_URL="https://github.com/igortech/Prompt-studio.git"
 
             cd "$APP_DIR"
+            git stash
             git fetch origin
             git checkout release || git checkout -b release origin/release
             git pull origin release
