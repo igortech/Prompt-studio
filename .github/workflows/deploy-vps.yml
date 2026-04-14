@@ -17,8 +17,6 @@ jobs:
           echo "✅ All secrets present"
           
       - name: Deploy to VPS
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -30,7 +28,7 @@ jobs:
             set -o pipefail
             whoami
             APP_DIR="/var/www/prompts.neiro-kod.ru"
-            REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/igortech/Prompt-studio.git"
+            REPO_URL="https://github.com/igortech/Prompt-studio.git"
             
             # Clone if directory doesn't exist or not a git repo
             if [ ! -d "$APP_DIR/.git" ]; then
@@ -50,6 +48,8 @@ jobs:
             git fetch origin
             git checkout release || git checkout -b release origin/release
             git pull origin release
-            npm install
+            npm ci
             npm run build
+            sudo chown -R www-data:www-data dist
+            sudo systemctl reload nginx
             echo "✅ Deployed successfully at $(date)"
