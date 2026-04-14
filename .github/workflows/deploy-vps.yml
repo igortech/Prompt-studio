@@ -40,5 +40,6 @@ jobs:
             sudo -n rm -rf dist
             sudo -n npm run build
             sudo -n chown -R www-data:www-data dist
+            sudo -n pm2 restart prompts-app
             sudo -n systemctl reload nginx
             echo "✅ Deployed successfully at $(date)"

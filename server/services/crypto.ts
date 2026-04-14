@@ -1,4 +1,4 @@
-import * as crypto from 'crypto';
+import crypto from 'crypto';
 import prisma from './prisma.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-for-dev';
