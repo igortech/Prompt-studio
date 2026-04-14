@@ -28,33 +28,22 @@ jobs:
             whoami
 
             APP_DIR="/var/www/prompts.neiro-kod.ru"
-            REPO_URL="https://github.com/igortech/Prompt-studio.git"
 
-            git config --global --add safe.directory "$APP_DIR"
             cd "$APP_DIR"
+
+            # фиксим права (страховка)
+            sudo -n chown -R $USER:$USER "$APP_DIR"
+
             git stash || true
             git fetch origin
-            git checkout release || git checkout -b release origin/release
+            git checkout release || true
             git pull origin release
-            
-            sudo rm -rf node_modules
+
+            rm -rf node_modules
             npm ci
-            
+
             echo "📦 Building frontend..."
-            sudo -n rm -rf dist
-            npm run build 2>&1 || { echo "❌ Frontend build failed"; exit 1; }
-            echo "✅ Frontend build complete"
+            rm -rf dist
+            npm run build || { echo "❌ Frontend build failed"; exit 1; }
+
             sudo -n chown -R www-data:www-data dist
-            echo "🔄 Restarting app..."
-            sudo -n pm2 restart prompts-app 2>&1 || true
-            sleep 5
-            
-            echo "📋 Checking PM2 status..."
-            sudo -n pm2 status prompts-app || true
-            echo "📋 Checking PM2 logs (last 100 lines)..."
-            sudo -n pm2 logs prompts-app --lines 100 --nostream 2>&1 || true
-            echo "✅ Checking app health..."
-            curl -v http://localhost:3000 2>&1 || true
-            echo "✅ Nginx reload..."
-            sudo -n systemctl reload nginx || true
-            echo "✅ Deployed at $(date)"
