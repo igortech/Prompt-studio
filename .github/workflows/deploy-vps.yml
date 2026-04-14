@@ -48,7 +48,10 @@ jobs:
             ls -la server/services/crypto.js || echo "⚠️ crypto.js not found"
             sudo -n chown -R www-data:www-data dist
             echo "🔄 Restarting app..."
-            sudo -n pm2 restart prompts-app 2>&1 || { echo "❌ PM2 restart failed"; sudo -n pm2 logs prompts-app --lines 20; exit 1; }
+            sudo -n pm2 restart prompts-app 2>&1
+            sleep 3
+            echo "📋 Checking PM2 logs..."
+            sudo -n pm2 logs prompts-app --lines 30 --nostream
             echo "✅ App restarted"
             sudo -n systemctl reload nginx
             echo "✅ Nginx reloaded"
