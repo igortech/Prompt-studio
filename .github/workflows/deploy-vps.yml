@@ -33,14 +33,17 @@ jobs:
             # Clone if directory doesn't exist or not a git repo
             if [ ! -d "$APP_DIR/.git" ]; then
               echo "📦 Cloning repository..."
-              if [ -d "$APP_DIR" ]; then
-                echo "❌ Directory exists but is not a git repository. Please remove it manually or check permissions."
-                exit 1
-              fi
-              mkdir -p "$APP_DIR"
               mkdir -p ~/.ssh
               ssh-keyscan github.com >> ~/.ssh/known_hosts
-              git clone "$REPO_URL" "$APP_DIR"
+              if [ -d "$APP_DIR" ]; then
+                echo "📁 Directory exists, initializing git..."
+                cd "$APP_DIR"
+                git init
+                git remote add origin "$REPO_URL"
+              else
+                mkdir -p "$APP_DIR"
+                git clone "$REPO_URL" "$APP_DIR"
+              fi
             fi
             
             cd "$APP_DIR"
