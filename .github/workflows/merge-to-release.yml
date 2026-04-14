@@ -1,0 +1,25 @@
+name: Merge Main to Release
+
+on:
+  workflow_dispatch:  # Запуск по кнопке
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release
+          fetch-depth: 0
+      
+      - name: Merge main into release
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git merge origin/main --no-ff -m "chore: merge main into release [triggered by ${{ github.actor }}]"
+          git push origin release
+          
+      - name: Show result
+        run: |
+          echo "✅ Влито в release:"
+          git log -1 --oneline
