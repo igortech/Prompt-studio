@@ -3,6 +3,9 @@ name: Merge Main to Release
 on:
   workflow_dispatch:  # Запуск по кнопке
 
+permissions:
+  contents: write
+
 jobs:
   merge:
     runs-on: ubuntu-latest
@@ -13,10 +16,13 @@ jobs:
           fetch-depth: 0
       
       - name: Merge main into release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git merge origin/main --no-ff -m "chore: merge main into release [triggered by ${{ github.actor }}]"
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/igortech/Prompt-studio.git
           git push origin release
           
       - name: Show result
