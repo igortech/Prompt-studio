@@ -45,9 +45,11 @@ jobs:
             sudo -n chown -R www-data:www-data dist
             echo "🔄 Restarting app..."
             sudo -n pm2 restart prompts-app 2>&1
-            sleep 3
-            echo "📋 Checking PM2 logs..."
-            sudo -n pm2 logs prompts-app --lines 30 --nostream
+            sleep 5
+            echo "📋 Checking PM2 status..."
+            sudo -n pm2 status prompts-app
+            echo "📋 Checking PM2 logs (last 50 lines)..."
+            sudo -n pm2 logs prompts-app --lines 50 --nostream 2>&1 || true
             echo "✅ App restarted"
             sudo -n systemctl reload nginx
             echo "✅ Nginx reloaded"
