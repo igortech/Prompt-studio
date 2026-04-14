@@ -41,10 +41,15 @@ jobs:
             echo "📦 Building frontend..."
             sudo -n rm -rf dist
             sudo -n npm run build 2>&1 || { echo "❌ Frontend build failed"; exit 1; }
+            echo "✅ Frontend build complete"
             echo "📦 Compiling server TypeScript..."
             sudo -n npx tsc -p tsconfig.server.json 2>&1 || { echo "❌ Server compilation failed"; exit 1; }
+            echo "✅ Server compilation complete"
+            ls -la server/services/crypto.js || echo "⚠️ crypto.js not found"
             sudo -n chown -R www-data:www-data dist
             echo "🔄 Restarting app..."
-            sudo -n pm2 restart prompts-app || { echo "❌ PM2 restart failed"; exit 1; }
+            sudo -n pm2 restart prompts-app 2>&1 || { echo "❌ PM2 restart failed"; sudo -n pm2 logs prompts-app --lines 20; exit 1; }
+            echo "✅ App restarted"
             sudo -n systemctl reload nginx
+            echo "✅ Nginx reloaded"
             echo "✅ Deployed successfully at $(date)"
