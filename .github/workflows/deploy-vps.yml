@@ -31,6 +31,7 @@ jobs:
             APP_DIR="/var/www/prompts.neiro-kod.ru"
             REPO_URL="https://github.com/igortech/Prompt-studio.git"
 
+            git config --global --add safe.directory "$APP_DIR"
             cd "$APP_DIR"
             git stash
             git fetch origin
