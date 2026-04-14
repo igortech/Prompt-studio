@@ -38,6 +38,8 @@ jobs:
                 exit 1
               fi
               mkdir -p "$APP_DIR"
+              mkdir -p ~/.ssh
+              ssh-keyscan github.com >> ~/.ssh/known_hosts
               git clone "$REPO_URL" "$APP_DIR"
             fi
             
