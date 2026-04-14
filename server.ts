@@ -1,7 +1,20 @@
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.resolve(__dirname, '.env');
+console.log('Loading .env from:', envPath);
+const result = dotenv.config({ path: envPath });
+if (result.error) {
+  console.warn('No .env file found, using default values');
+} else {
+  console.log('.env loaded successfully');
+}
+
 import express from 'express';
 import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
-import path from 'path';
 import cookieParser from 'cookie-parser';
 
 import authRoutes from './server/routes/auth.js';
@@ -12,7 +25,7 @@ import './server/cron/cleanup.js';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || '3000', 10);
 
   app.use(cors());
   app.use(express.json());

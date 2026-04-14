@@ -19,6 +19,8 @@ router.get('/url', (req, res) => {
     return res.status(400).json({ error: 'Google OAuth Client ID is not configured in AI Studio Secrets.' });
   }
   const redirectUri = `${process.env.APP_URL}/auth/callback`;
+  console.log('DEBUG: APP_URL =', process.env.APP_URL);
+  console.log('DEBUG: redirectUri =', redirectUri);
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -35,6 +37,8 @@ router.get('/callback', async (req, res) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const redirectUri = `${process.env.APP_URL}/auth/callback`;
+  console.log('DEBUG callback: APP_URL =', process.env.APP_URL);
+  console.log('DEBUG callback: redirectUri =', redirectUri);
 
   if (!clientId || !clientSecret) {
     return res.status(500).send('OAuth credentials not configured');

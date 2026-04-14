@@ -57,8 +57,8 @@
 
 5. Инициализируйте базу данных:
    ```bash
-   npx prisma generate
-   npx prisma db push
+   npx prisma@5.22.0 generate
+   npx prisma@5.22.0 db push
    ```
 
 ## Запуск
