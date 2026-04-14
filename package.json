@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node init-db.js && tsx server.ts",
-    "build": "npx prisma@5.22.0 generate && vite build && tsc -p tsconfig.server.json",
+    "build": "npx prisma@5.22.0 generate && vite build",
+    "build:server": "tsc -p tsconfig.server.json",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",

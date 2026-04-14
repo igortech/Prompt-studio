@@ -38,9 +38,13 @@ jobs:
             git checkout release || git checkout -b release origin/release
             git pull origin release
             npm ci
+            echo "📦 Building frontend..."
             sudo -n rm -rf dist
-            sudo -n npm run build
+            sudo -n npm run build 2>&1 || { echo "❌ Frontend build failed"; exit 1; }
+            echo "📦 Building server..."
+            sudo -n npm run build:server 2>&1 || { echo "❌ Server build failed"; exit 1; }
             sudo -n chown -R www-data:www-data dist
-            sudo -n pm2 restart prompts-app
+            echo "🔄 Restarting app..."
+            sudo -n pm2 restart prompts-app || { echo "❌ PM2 restart failed"; exit 1; }
             sudo -n systemctl reload nginx
             echo "✅ Deployed successfully at $(date)"
