@@ -44,12 +44,12 @@ var client_1 = require("@prisma/client");
 var prisma = new client_1.PrismaClient();
 var JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-for-dev';
 var ENCRYPTION_KEY = process.env.ENCRYPTION_KEY
-    ? crypto_1.default.scryptSync(process.env.ENCRYPTION_KEY, 'salt', 32)
-    : crypto_1.default.scryptSync(JWT_SECRET, 'salt', 32);
+    ? crypto_1.scryptSync(process.env.ENCRYPTION_KEY, 'salt', 32)
+    : crypto_1.scryptSync(JWT_SECRET, 'salt', 32);
 var ALGORITHM = 'aes-256-gcm';
 function encryptKey(text) {
-    var iv = crypto_1.default.randomBytes(12);
-    var cipher = crypto_1.default.createCipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
+    var iv = crypto_1.randomBytes(12);
+    var cipher = crypto_1.createCipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
     var encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     var authTag = cipher.getAuthTag().toString('hex');
@@ -57,7 +57,7 @@ function encryptKey(text) {
 }
 function decryptKey(encryptedKeyWithTag, keyIv) {
     var _a = encryptedKeyWithTag.split(':'), encrypted = _a[0], authTag = _a[1];
-    var decipher = crypto_1.default.createDecipheriv(ALGORITHM, ENCRYPTION_KEY, Buffer.from(keyIv, 'hex'));
+    var decipher = crypto_1.createDecipheriv(ALGORITHM, ENCRYPTION_KEY, Buffer.from(keyIv, 'hex'));
     decipher.setAuthTag(Buffer.from(authTag, 'hex'));
     var decrypted = decipher.update(encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
@@ -87,3 +87,4 @@ function getDecryptedKey(userId, provider) {
         });
     });
 }
+
