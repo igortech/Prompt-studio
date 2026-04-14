@@ -36,15 +36,19 @@ jobs:
             git fetch origin
             git checkout release || git checkout -b release origin/release
             git pull origin release
+            
+            sudo rm -rf node_modules
             npm ci
+            
             echo "📦 Building frontend..."
             sudo -n rm -rf dist
-            sudo -n npm run build 2>&1 || { echo "❌ Frontend build failed"; exit 1; }
+            npm run build 2>&1 || { echo "❌ Frontend build failed"; exit 1; }
             echo "✅ Frontend build complete"
             sudo -n chown -R www-data:www-data dist
             echo "🔄 Restarting app..."
             sudo -n pm2 restart prompts-app 2>&1 || true
             sleep 5
+            
             echo "📋 Checking PM2 status..."
             sudo -n pm2 status prompts-app || true
             echo "📋 Checking PM2 logs (last 100 lines)..."
