@@ -55,3 +55,12 @@ jobs:
             npx tsc -p tsconfig.server.json || { echo "❌ Server compilation failed"; exit 1; }
 
             sudo -n chown -R www-data:www-data dist
+
+            echo "🔄 Restarting app..."
+            sudo -n pm2 restart prompts-app || true
+            sleep 3
+            
+            echo "📋 Checking PM2 logs..."
+            sudo -n pm2 logs prompts-app --lines 10 --nostream || true
+            
+            echo "✅ Deployed successfully"
