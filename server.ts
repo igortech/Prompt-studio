@@ -33,14 +33,15 @@ async function startServer() {
     credentials: true
   }));
   
-  // Log all requests
-  app.use((req, res, next) => {
-    console.log(`${req.method} ${req.path} - Origin: ${req.get('origin')} - Cookies: ${Object.keys(req.cookies).join(', ') || 'none'}`);
-    next();
-  });
-  
   app.use(express.json());
   app.use(cookieParser());
+  
+  // Log all requests
+  app.use((req, res, next) => {
+    const cookieKeys = req.cookies ? Object.keys(req.cookies).join(', ') : 'none';
+    console.log(`${req.method} ${req.path} - Origin: ${req.get('origin')} - Cookies: ${cookieKeys}`);
+    next();
+  });
 
   // API Routes
   app.use('/api/auth', authRoutes);
