@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "start": "node init-db.mjs && node server.js"
+    "start": "node init-db.mjs && tsx server.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

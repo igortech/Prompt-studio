@@ -51,9 +51,6 @@ jobs:
             rm -rf dist
             npm run build || { echo "❌ Frontend build failed"; exit 1; }
 
-            echo "📦 Compiling server TypeScript..."
-            npx tsc -p tsconfig.server.json || { echo "❌ Server compilation failed"; exit 1; }
-
             sudo -n chown -R www-data:www-data dist
 
             echo "🔄 Restarting app..."
