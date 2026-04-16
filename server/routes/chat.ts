@@ -122,23 +122,26 @@ router.post('/prompt/:promptId', requireAuth, async (req: any, res) => {
       const history = await prisma.message.findMany({
         where: { promptId },
         orderBy: { createdAt: 'desc' },
-        take: 11
+        take: 3  // Only last 2 messages + current
       });
       
       const reversedHistory = history.reverse();
+      // Don't include system instruction in messages for Ollama - just use recent history
       const messages = [
-        { role: 'system', content: prompt.content },
         ...reversedHistory.slice(0, -1).map(msg => ({
           role: msg.role,
           content: msg.content
         })),
-        { role: 'user', content }
+        { role: 'user', content: `${prompt.content}\n\n${content}` }  // Include prompt as context in user message
       ];
 
       logger.info('Chat Request (Ollama)', { model: finalModel, messages });
-      const response = await fetch(endpoint, {
+      const response = await fetch(`${endpoint}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userKey}`
+        },
         body: JSON.stringify({
           model: finalModel,
           messages,
@@ -153,30 +156,18 @@ router.post('/prompt/:promptId', requireAuth, async (req: any, res) => {
       }
 
       const data = await response.json();
-      // @ts-ignore
-      logger.info('Chat Response (Ollama)', { model: finalModel, text: data.message?.content });
-      // @ts-ignore
-      assistantContent = data.message?.content || '';
+      logger.info('Chat Response (Ollama)', { model: finalModel, text: data.choices?.[0]?.message?.content });
+      assistantContent = data.choices?.[0]?.message?.content || '';
       latencyMs = Date.now() - startTime;
 
-      // @ts-ignore
-      promptTokens = data.prompt_eval_count || 0;
-      // @ts-ignore
-      completionTokens = data.eval_count || 0;
-      // @ts-ignore
-      totalTokens = (data.prompt_eval_count || 0) + (data.eval_count || 0);
+      promptTokens = data.usage?.prompt_tokens || 0;
+      completionTokens = data.usage?.completion_tokens || 0;
+      totalTokens = data.usage?.total_tokens || 0;
 
       debugInfo = {
         model: finalModel,
         provider: 'ollama',
-        // @ts-ignore
-        total_duration: data.total_duration,
-        // @ts-ignore
-        load_duration: data.load_duration,
-        // @ts-ignore
-        prompt_eval_count: data.prompt_eval_count,
-        // @ts-ignore
-        eval_count: data.eval_count,
+        usage: data.usage,
         latencyMs
       };
     }

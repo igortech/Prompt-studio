@@ -46,7 +46,7 @@ function sanitizeParams(params: any) {
 }
 
 /**
- * Helper to call Ollama API
+ * Helper to call Ollama API (OpenAI compatible)
  */
 export async function generateContentWithOllama(apiKey: string, params: any) {
   const baseUrl = process.env.OLLAMA_ENDPOINT || 'https://ollama.com/v1';
@@ -56,31 +56,51 @@ export async function generateContentWithOllama(apiKey: string, params: any) {
   logger.info('Ollama Request', { model, baseUrl });
 
   try {
-    // Ollama uses /api/generate endpoint, not /chat/completions
-    const response = await fetch(`${baseUrl}/api/generate`, {
+    // Ollama uses OpenAI-compatible /chat/completions endpoint
+    const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
         model,
-        prompt: contents,
+        messages: [
+          {
+            role: 'user',
+            content: contents
+          }
+        ],
         stream: false
       })
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      logger.error('Ollama API Error', error, { model, status: response.status });
-      throw new Error(error.error?.message || `Ollama API error: ${response.status}`);
+      const errorText = await response.text();
+      logger.error('Ollama API Error', { status: response.status, body: errorText }, { model });
+      throw new Error(`Ollama API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    logger.info('Ollama Response', { model, text: data.response });
+    let text = data.choices?.[0]?.message?.content || '';
+    
+    // If response is JSON wrapped in markdown code blocks, extract it
+    if (text.includes('```json')) {
+      const jsonMatch = text.match(/```json\n?([\s\S]*?)\n?```/);
+      if (jsonMatch) {
+        text = jsonMatch[1];
+      }
+    } else if (text.includes('```')) {
+      const jsonMatch = text.match(/```\n?([\s\S]*?)\n?```/);
+      if (jsonMatch) {
+        text = jsonMatch[1];
+      }
+    }
+    
+    logger.info('Ollama Response', { model, text });
     
     return {
-      text: data.response || ''
+      text
     };
   } catch (error: any) {
     logger.error('Ollama Request Failed', error, { model });
