@@ -42,7 +42,7 @@ jobs:
 
             # Remove old compiled JS files to avoid conflicts
             find server -name "*.js" -type f -delete || true
-            rm -f server.js init-db.js
+            rm -f server.js
 
             rm -rf node_modules
             npm ci
@@ -52,6 +52,9 @@ jobs:
             npm run build || { echo "❌ Frontend build failed"; exit 1; }
 
             sudo -n chown -R www-data:www-data dist
+
+            echo "🗄️ Initializing database..."
+            node init-db.js || { echo "❌ Database initialization failed"; exit 1; }
 
             echo "🔄 Starting/Restarting app..."
             sudo -n pm2 delete prompts-app || true
