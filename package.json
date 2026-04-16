@@ -2,6 +2,7 @@
   "name": "react-example",
   "private": true,
   "version": "0.0.0",
+  "type": "commonjs",
   "scripts": {
     "dev": "node init-db.mjs && tsx server.ts",
     "build": "npx prisma@5.22.0 generate && vite build",
