@@ -18,12 +18,22 @@ router.get('/url', (req, res) => {
   if (!clientId) {
     return res.status(400).json({ error: 'Google OAuth Client ID is not configured in AI Studio Secrets.' });
   }
-  const redirectUri = `${process.env.APP_URL}/auth/callback`;
+  
+  // Get the correct protocol from X-Forwarded-Proto header (set by Nginx)
+  const protocol = req.get('X-Forwarded-Proto') || req.protocol;
+  const host = req.get('host');
+  const baseUrl = `${protocol}://${host}`;
+  const redirectUri = `${baseUrl}/auth/callback`;
+  
   console.log('DEBUG: APP_URL =', process.env.APP_URL);
+  console.log('DEBUG: X-Forwarded-Proto =', req.get('X-Forwarded-Proto'));
+  console.log('DEBUG: protocol =', protocol);
+  console.log('DEBUG: host =', host);
   console.log('DEBUG: redirectUri =', redirectUri);
   console.log('DEBUG: Request origin =', req.get('origin'));
   console.log('DEBUG: Request host =', req.get('host'));
   console.log('DEBUG: Request protocol =', req.protocol);
+  
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -39,8 +49,15 @@ router.get('/callback', async (req, res) => {
   const { code } = req.query;
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = `${process.env.APP_URL}/auth/callback`;
-  console.log('DEBUG callback: APP_URL =', process.env.APP_URL);
+  
+  // Get the correct protocol from X-Forwarded-Proto header (set by Nginx)
+  const protocol = req.get('X-Forwarded-Proto') || req.protocol;
+  const host = req.get('host');
+  const baseUrl = `${protocol}://${host}`;
+  const redirectUri = `${baseUrl}/auth/callback`;
+  
+  console.log('DEBUG callback: X-Forwarded-Proto =', req.get('X-Forwarded-Proto'));
+  console.log('DEBUG callback: protocol =', protocol);
   console.log('DEBUG callback: redirectUri =', redirectUri);
 
   if (!clientId || !clientSecret) {

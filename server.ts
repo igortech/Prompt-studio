@@ -26,6 +26,9 @@ async function startServer() {
   const PORT = parseInt(process.env.PORT || '3000', 10);
   const appUrl = process.env.APP_URL || 'http://localhost:3000';
 
+  // Trust proxy headers from Nginx
+  app.set('trust proxy', 1);
+
   console.log('CORS configured for origin:', appUrl);
   
   app.use(cors({
