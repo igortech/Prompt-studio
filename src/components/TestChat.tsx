@@ -119,15 +119,27 @@ export function TestChat() {
             <option value="google">Google Gemini</option>
             <option value="ollama">Ollama</option>
           </select>
-          <select 
-            value={model}
-            onChange={e => setModel(e.target.value)}
-            className="bg-slate-100 dark:bg-slate-800 border-none rounded px-2 py-1.5 outline-none flex-1 min-w-0"
-          >
-            {(provider === 'google' ? GOOGLE_MODELS : OLLAMA_MODELS).map(m => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
+          <div className="relative group flex-1 min-w-0">
+            <select 
+              value={model}
+              onChange={e => setModel(e.target.value)}
+              className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded px-2 py-1.5 outline-none"
+            >
+              {(provider === 'google' ? GOOGLE_MODELS : OLLAMA_MODELS).map(m => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+            {(() => {
+              const models = provider === 'google' ? GOOGLE_MODELS : OLLAMA_MODELS;
+              const selectedModel = models.find(m => m.id === model);
+              return selectedModel?.description ? (
+                <div className="absolute bottom-full left-0 right-0 mb-2 p-2 bg-slate-900 dark:bg-slate-700 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-normal z-10 shadow-lg">
+                  {selectedModel.description}
+                  <div className="absolute top-full left-2 w-2 h-2 bg-slate-900 dark:bg-slate-700 transform rotate-45"></div>
+                </div>
+              ) : null;
+            })()}
+          </div>
         </div>
       </div>
 

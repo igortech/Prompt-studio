@@ -84,43 +84,61 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     setProvider: (v: string) => void, 
     model: string, 
     setModel: (v: string) => void
-  ) => (
-    <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-200 dark:border-slate-800">
-      <div className="flex items-center gap-2 mb-1">
-        {icon}
-        <h3 className="text-sm font-semibold">{label}</h3>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Провайдер</label>
-          <select 
-            value={provider}
-            onChange={(e) => {
-              const newProvider = e.target.value;
-              setProvider(newProvider);
-              setModel(newProvider === 'google' ? GOOGLE_MODELS[0].id : OLLAMA_MODELS[0].id);
-            }}
-            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="google">Google Gemini</option>
-            <option value="ollama">Ollama</option>
-          </select>
+  ) => {
+    const models = provider === 'google' ? GOOGLE_MODELS : OLLAMA_MODELS;
+    const selectedModel = models.find(m => m.id === model);
+    
+    return (
+      <div className="space-y-3 p-4 bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-2 mb-1">
+          {icon}
+          <h3 className="text-sm font-semibold">{label}</h3>
         </div>
-        <div>
-          <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Модель</label>
-          <select 
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            {(provider === 'google' ? GOOGLE_MODELS : OLLAMA_MODELS).map(m => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Провайдер</label>
+            <select 
+              value={provider}
+              onChange={(e) => {
+                const newProvider = e.target.value;
+                setProvider(newProvider);
+                setModel(newProvider === 'google' ? GOOGLE_MODELS[0].id : OLLAMA_MODELS[0].id);
+              }}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="google">Google Gemini</option>
+              <option value="ollama">Ollama</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Модель</label>
+            <div className="relative group">
+              <select 
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {models.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+              {selectedModel?.description && (
+                <div className="absolute bottom-full left-0 right-0 mb-2 p-2 bg-slate-900 dark:bg-slate-700 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-normal z-10 shadow-lg">
+                  {selectedModel.description}
+                  <div className="absolute top-full left-2 w-2 h-2 bg-slate-900 dark:bg-slate-700 transform rotate-45"></div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
+        {selectedModel?.description && (
+          <p className="text-xs text-slate-600 dark:text-slate-400 italic mt-2">
+            💡 {selectedModel.description}
+          </p>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
