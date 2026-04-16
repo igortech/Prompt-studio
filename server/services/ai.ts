@@ -49,7 +49,7 @@ function sanitizeParams(params: any) {
  * Helper to call Gemini with exponential backoff retry logic
  * Handles 503 (Service Unavailable) and 429 (Too Many Requests) errors
  */
-export async function generateContentWithRetry(apiKey: string, params: any, maxRetries = 3) {
+export async function generateContentWithRetry(apiKey: string, params: any, maxRetries = 2) {
   const ai = new GoogleGenAI({ apiKey });
   let lastError: any;
   
@@ -71,30 +71,35 @@ export async function generateContentWithRetry(apiKey: string, params: any, maxR
       lastError = error;
       
       const errorStr = JSON.stringify(error).toLowerCase();
-      const isRetryable = 
+      const isServerOverloaded = 
         errorStr.includes('503') || 
-        errorStr.includes('429') ||
         errorStr.includes('high demand') ||
         errorStr.includes('unavailable') ||
-        errorStr.includes('deadline_exceeded') ||
         error.status === 'UNAVAILABLE' ||
         error.code === 503 ||
         error.error?.code === 503 ||
         error.error?.status === 'UNAVAILABLE';
+      
+      const isRateLimited = 
+        errorStr.includes('429') ||
+        errorStr.includes('quota');
 
-      if (isRetryable && attempt < maxRetries) {
-        // Увеличенные интервалы: 3с, 6с, 12с
-        const delay = Math.pow(2, attempt) * 3000 + Math.random() * 1000;
-        logger.warn(`Gemini API busy (attempt ${attempt + 1}/${maxRetries + 1}). Retrying...`, { delay: Math.round(delay), error: error.message || error.status });
+      // If server is overloaded, fail immediately to avoid hammering the API
+      if (isServerOverloaded) {
+        logger.error('Gemini API overloaded, failing immediately', error, { model: params.model, attempt: attempt + 1 });
+        throw new Error('Сервис временно недоступен (503). Это может быть связано с перегрузкой API или ограничениями вашего API-ключа/квот. Попробуйте использовать другую модель в настройках или подождите пару минут.');
+      }
+
+      // For rate limiting, retry with backoff
+      if (isRateLimited && attempt < maxRetries) {
+        const delays = [5000, 10000]; // 5s, 10s
+        const delay = delays[attempt] + Math.random() * 1000;
+        logger.warn(`Gemini API rate limited (attempt ${attempt + 1}/${maxRetries + 1}). Retrying...`, { delay: Math.round(delay), error: error.message || error.status });
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
       
       logger.error('Gemini API Error', error, { model: params.model, attempt: attempt + 1 });
-      
-      if (isRetryable) {
-        throw new Error('Сервис временно недоступен (503). Это может быть связано с перегрузкой API или ограничениями вашего API-ключа/квот. Попробуйте использовать другую модель в настройках или подождите пару минут.');
-      }
       throw error;
     }
   }
@@ -105,7 +110,7 @@ export async function generateContentWithRetry(apiKey: string, params: any, maxR
 /**
  * Helper to send chat messages with exponential backoff retry logic
  */
-export async function sendMessageWithRetry(chat: any, message: string, maxRetries = 3) {
+export async function sendMessageWithRetry(chat: any, message: string, maxRetries = 2) {
   let lastError: any;
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -116,31 +121,36 @@ export async function sendMessageWithRetry(chat: any, message: string, maxRetrie
       lastError = error;
       
       const errorStr = JSON.stringify(error).toLowerCase();
-      const isRetryable = 
+      const isServerOverloaded = 
         errorStr.includes('503') || 
-        errorStr.includes('429') ||
         errorStr.includes('high demand') ||
         errorStr.includes('unavailable') ||
-        errorStr.includes('deadline_exceeded') ||
         error.status === 'UNAVAILABLE' ||
         error.code === 503 ||
         error.error?.code === 503 ||
         error.error?.status === 'UNAVAILABLE';
+      
+      const isRateLimited = 
+        errorStr.includes('429') ||
+        errorStr.includes('quota');
 
-      if (isRetryable && attempt < maxRetries) {
-        // Увеличенные интервалы: 2с, 4с, 8с
-        const delay = Math.pow(2, attempt + 1) * 1000 + Math.random() * 1000;
-        logger.info(`Gemini Chat API busy (attempt ${attempt + 1}/${maxRetries + 1}). Retrying...`, { delay: Math.round(delay), error: error.message || error.status });
-        console.warn(`Gemini Chat API busy (attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${Math.round(delay)}ms...`);
+      // If server is overloaded, fail immediately
+      if (isServerOverloaded) {
+        logger.error('Gemini Chat API overloaded, failing immediately', error, { attempt: attempt + 1 });
+        throw new Error('Сервис временно недоступен (503). Пожалуйста, попробуйте снова через минуту.');
+      }
+
+      // For rate limiting, retry with backoff
+      if (isRateLimited && attempt < maxRetries) {
+        const delays = [5000, 10000]; // 5s, 10s
+        const delay = delays[attempt] + Math.random() * 1000;
+        logger.info(`Gemini Chat API rate limited (attempt ${attempt + 1}/${maxRetries + 1}). Retrying...`, { delay: Math.round(delay), error: error.message || error.status });
+        console.warn(`Gemini Chat API rate limited (attempt ${attempt + 1}/${maxRetries + 1}). Retrying in ${Math.round(delay)}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
       
       logger.error('Gemini Chat API Error', error, { attempt: attempt + 1 });
-      
-      if (isRetryable) {
-        throw new Error('Сервис временно недоступен (503). Пожалуйста, попробуйте снова через минуту.');
-      }
       throw error;
     }
   }

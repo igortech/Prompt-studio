@@ -624,6 +624,8 @@ router.post('/generate-from-fields', requireAuth, async (req: any, res) => {
 router.post('/extract-fields', requireAuth, async (req: any, res) => {
   try {
     const { text } = req.body;
+    console.log('[extract-fields] Starting extraction for text length:', text?.length);
+    
     const userKey = await getDecryptedKey(req.user.id, 'google');
     const apiKey = userKey || process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('Google Gemini API key is not configured');
@@ -635,8 +637,12 @@ router.post('/extract-fields', requireAuth, async (req: any, res) => {
       return res.status(400).json({ error: 'Модель для извлечения не выбрана в настройках' });
     }
 
-    logger.info('Extracting fields from text', { model });
+    console.log('[extract-fields] Using model:', model);
+    logger.info('Extracting fields from text', { model, textLength: text?.length });
+    
     const prompt = getPromptExtractionPrompt(text);
+    console.log('[extract-fields] Calling generateContentWithRetry...');
+    
     const response = await generateContentWithRetry(apiKey, {
       model: model,
       contents: prompt,
@@ -646,8 +652,11 @@ router.post('/extract-fields', requireAuth, async (req: any, res) => {
       }
     });
     
+    console.log('[extract-fields] Got response, parsing JSON');
     res.json(JSON.parse(response.text || '{}'));
   } catch (error: any) {
+    console.error('[extract-fields] Error:', error.message);
+    logger.error('Extract fields error', error);
     res.status(500).json({ error: error.message });
   }
 });

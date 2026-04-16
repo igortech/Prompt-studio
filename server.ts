@@ -57,6 +57,14 @@ async function startServer() {
   app.use(express.json());
   app.use(cookieParser());
   
+  // Set longer timeouts for AI operations
+  app.use((req, res, next) => {
+    // Set socket timeout to 5 minutes for long-running AI requests
+    req.socket.setTimeout(5 * 60 * 1000);
+    res.setTimeout(5 * 60 * 1000);
+    next();
+  });
+  
   // Log all requests
   app.use((req, res, next) => {
     const cookieKeys = req.cookies ? Object.keys(req.cookies).join(', ') : 'none';
