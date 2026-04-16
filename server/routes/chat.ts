@@ -3,7 +3,7 @@ import prisma from '../services/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getDecryptedKey } from '../services/crypto.js';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
-import { sendMessageWithRetry } from '../services/ai.js';
+import { sendMessageWithRetry, generateContent } from '../services/ai.js';
 import { AI_CONFIG } from '../config/ai.js';
 
 import { logger } from '../services/logger.js';
@@ -233,52 +233,117 @@ router.post('/prompt/:promptId/replay', requireAuth, async (req: any, res) => {
     // Delete all existing messages for this prompt
     await prisma.message.deleteMany({ where: { promptId } });
 
-    const userKey = await getDecryptedKey(req.user.id, 'google');
-    const apiKey = userKey || process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('Google Gemini API key is not configured');
-    const ai = new GoogleGenAI({ apiKey });
-
     const results = [];
-    const chat = ai.chats.create({
-      model: finalModel,
-      config: { 
-        systemInstruction: promptContent,
-        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.testChat }
-      }
-    });
 
-    for (const msg of history) {
-      // Recreate user message
-      await prisma.message.create({
-        data: {
-          promptId,
-          role: 'user',
-          content: msg.content
+    if (finalProvider === 'google') {
+      const userKey = await getDecryptedKey(req.user.id, 'google');
+      const apiKey = userKey || process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error('Google Gemini API key is not configured');
+      const ai = new GoogleGenAI({ apiKey });
+
+      const chat = ai.chats.create({
+        model: finalModel,
+        config: { 
+          systemInstruction: promptContent,
+          thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.testChat }
         }
       });
 
-      const startTime = Date.now();
-      const response = await chat.sendMessage({ message: msg.content });
-      const latencyMs = Date.now() - startTime;
-      const assistantContent = response.text || '';
-      
-      // Create assistant message
-      await prisma.message.create({
-        data: {
-          promptId,
-          role: 'assistant',
-          content: assistantContent,
-          model: finalModel,
-          provider: finalProvider,
+      for (const msg of history) {
+        // Recreate user message
+        await prisma.message.create({
+          data: {
+            promptId,
+            role: 'user',
+            content: msg.content
+          }
+        });
+
+        const startTime = Date.now();
+        const response = await chat.sendMessage({ message: msg.content });
+        const latencyMs = Date.now() - startTime;
+        const assistantContent = response.text || '';
+        
+        // Create assistant message
+        await prisma.message.create({
+          data: {
+            promptId,
+            role: 'assistant',
+            content: assistantContent,
+            model: finalModel,
+            provider: finalProvider,
+            latencyMs
+          }
+        });
+
+        results.push({
+          originalMessage: msg.content,
+          newResponse: assistantContent,
           latencyMs
-        }
-      });
+        });
+      }
+    } else if (finalProvider === 'ollama') {
+      const userKey = await getDecryptedKey(req.user.id, 'ollama');
+      if (!userKey) throw new Error('Ollama API key is not configured in settings');
+      
+      const endpoint = process.env.OLLAMA_ENDPOINT;
+      if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
 
-      results.push({
-        originalMessage: msg.content,
-        newResponse: assistantContent,
-        latencyMs
-      });
+      for (const msg of history) {
+        // Recreate user message
+        await prisma.message.create({
+          data: {
+            promptId,
+            role: 'user',
+            content: msg.content
+          }
+        });
+
+        const startTime = Date.now();
+        const response = await fetch(`${endpoint}/chat/completions`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${userKey}`
+          },
+          body: JSON.stringify({
+            model: finalModel,
+            messages: [
+              { role: 'system', content: promptContent },
+              { role: 'user', content: msg.content }
+            ],
+            stream: false
+          })
+        });
+
+        if (!response.ok) {
+          const err = await response.text();
+          logger.error('Chat Replay Error (Ollama)', err);
+          throw new Error(`Ollama error: ${err}`);
+        }
+
+        const data = await response.json();
+        const latencyMs = Date.now() - startTime;
+        const assistantContent = data.choices?.[0]?.message?.content || '';
+        
+        // Create assistant message
+        await prisma.message.create({
+          data: {
+            promptId,
+            role: 'assistant',
+            content: assistantContent,
+            model: finalModel,
+            provider: finalProvider,
+            latencyMs
+          }
+        });
+
+        results.push({
+          originalMessage: msg.content,
+          newResponse: assistantContent,
+          latencyMs
+        });
+      }
     }
 
     res.json({ success: true, results });

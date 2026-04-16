@@ -6,6 +6,7 @@ export const GOOGLE_MODELS = [
 ];
 
 export const OLLAMA_MODELS = [
+  { id: 'gemma3:4b', name: 'Gemma 3 4B', description: 'Легкая модель для быстрых операций' },
   { id: 'gemma4:31b', name: 'Gemma 4 31B', description: 'Лучший баланс качество/скорость' },
   { id: 'kimi-k2.5', name: 'Kimi K2.5', description: 'Agent Swarm (до 100 суб-агентов)' },
   { id: 'minimax2.5', name: 'MiniMax M2.5', description: 'Агентские задачи / кодинг' },
