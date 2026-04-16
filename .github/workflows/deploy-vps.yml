@@ -37,6 +37,7 @@ jobs:
 
             # Remove old compiled JS files to avoid conflicts
             find server -name "*.js" -type f -delete || true
+            rm -f server.js
 
             git stash || true
             git fetch origin
