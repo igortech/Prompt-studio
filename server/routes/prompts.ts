@@ -246,31 +246,16 @@ router.post('/:id/analyze', requireAuth, async (req: any, res) => {
     } else if (provider === 'ollama') {
       const userKey = await getDecryptedKey(req.user.id, 'ollama');
       if (!userKey) throw new Error('Ollama API key is not configured in settings');
-      const endpoint = process.env.OLLAMA_ENDPOINT;
-      if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
       
-      logger.info('Analyze Request (Ollama)', { model, prompt: analysisPrompt });
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          prompt: analysisPrompt + "\n\nIMPORTANT: Return ONLY a valid JSON object.",
-          stream: false,
-          format: 'json'
-        })
+      const { generateContent } = await import('../services/ai.js');
+      const response = await generateContent(userKey, 'ollama', {
+        model,
+        contents: analysisPrompt,
+        config: { 
+          responseMimeType: 'application/json'
+        }
       });
-      
-      if (!response.ok) {
-        const err = await response.text();
-        logger.error('Analyze Error (Ollama)', err);
-        throw new Error(`Ollama error: ${err}`);
-      }
-      const data = await response.json();
-      // @ts-ignore
-      logger.info('Analyze Response (Ollama)', { model, response: data.response });
-      // @ts-ignore
-      analysisResult = JSON.parse(data.response || '{}');
+      analysisResult = JSON.parse(response.text || '{}');
     }
 
     res.json(analysisResult);
@@ -316,31 +301,16 @@ router.post('/:id/improve', requireAuth, async (req: any, res) => {
     } else if (provider === 'ollama') {
       const userKey = await getDecryptedKey(req.user.id, 'ollama');
       if (!userKey) throw new Error('Ollama API key is not configured in settings');
-      const endpoint = process.env.OLLAMA_ENDPOINT;
-      if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
       
-      logger.info('Improve Request (Ollama)', { model, prompt: improvePrompt });
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          prompt: improvePrompt + "\n\nIMPORTANT: Return ONLY a valid JSON object.",
-          stream: false,
-          format: 'json'
-        })
+      const { generateContent } = await import('../services/ai.js');
+      const response = await generateContent(userKey, 'ollama', {
+        model,
+        contents: improvePrompt,
+        config: { 
+          responseMimeType: 'application/json'
+        }
       });
-      
-      if (!response.ok) {
-        const err = await response.text();
-        logger.error('Improve Error (Ollama)', err);
-        throw new Error(`Ollama error: ${err}`);
-      }
-      const data = await response.json();
-      // @ts-ignore
-      logger.info('Improve Response (Ollama)', { model, response: data.response });
-      // @ts-ignore
-      improveResult = JSON.parse(data.response || '{}');
+      improveResult = JSON.parse(response.text || '{}');
     }
 
     res.json(improveResult);
@@ -404,30 +374,18 @@ router.post('/:id/improvement-chat', requireAuth, async (req: any, res) => {
     } else if (provider === 'ollama') {
       const userKey = await getDecryptedKey(req.user.id, 'ollama');
       if (!userKey) throw new Error('Ollama API key is not configured in settings');
-      const endpoint = process.env.OLLAMA_ENDPOINT;
-      if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
       
-      const messages = [
-        { role: 'system', content: systemInstruction },
-        ...history.map((msg: any) => ({ role: msg.role, content: msg.content })),
-        { role: 'user', content: message + "\n\nIMPORTANT: Return ONLY a valid JSON object." }
-      ];
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: false,
-          format: 'json'
-        })
+      const { generateContent } = await import('../services/ai.js');
+      const fullPrompt = `${systemInstruction}\n\nHistory:\n${history.map((msg: any) => `${msg.role}: ${msg.content}`).join('\n')}\n\nUser: ${message}\n\nIMPORTANT: Return ONLY a valid JSON object.`;
+      
+      const response = await generateContent(userKey, 'ollama', {
+        model,
+        contents: fullPrompt,
+        config: {
+          responseMimeType: "application/json"
+        }
       });
-      
-      if (!response.ok) throw new Error(`Ollama error: ${await response.text()}`);
-      const data = await response.json();
-      // @ts-ignore
-      result = JSON.parse(data.message?.content || '{}');
+      result = JSON.parse(response.text || '{}');
     }
 
     res.json({
@@ -540,21 +498,17 @@ router.post('/:id/run-tests', requireAuth, async (req: any, res) => {
           evaluation = JSON.parse(evalResponse.text || '{}');
         } else if (analysisProvider === 'ollama') {
           const userKey = await getDecryptedKey(req.user.id, 'ollama');
-          const endpoint = process.env.OLLAMA_ENDPOINT;
-          if (!endpoint) throw new Error('OLLAMA_ENDPOINT environment variable is not configured');
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: analysisModel,
-              prompt: evalPrompt + "\n\nIMPORTANT: Return ONLY a valid JSON object.",
-              stream: false,
-              format: 'json'
-            })
+          if (!userKey) throw new Error('Ollama API key is not configured in settings');
+          
+          const { generateContent } = await import('../services/ai.js');
+          const response = await generateContent(userKey, 'ollama', {
+            model: analysisModel,
+            contents: evalPrompt,
+            config: { 
+              responseMimeType: 'application/json'
+            }
           });
-          const data = await response.json();
-          // @ts-ignore
-          evaluation = JSON.parse(data.response || '{}');
+          evaluation = JSON.parse(response.text || '{}');
         }
       } catch (e) {
         console.error('Eval error:', e);
