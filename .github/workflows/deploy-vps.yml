@@ -24,7 +24,8 @@ jobs:
           key: ${{ secrets.DEPLOY_KEY }}
           debug: true
           script: |
-            set -o pipefail
+            set -euo pipefail
+            trap 'echo "❌ Error on line $LINENO"; exit 1' ERR
             whoami
 
             APP_DIR="/var/www/prompts.neiro-kod.ru"
