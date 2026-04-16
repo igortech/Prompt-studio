@@ -22,12 +22,24 @@ export default function App() {
     const handleMessage = (event: MessageEvent) => {
       const origin = event.origin;
       const currentOrigin = window.location.origin;
+      
+      console.log('Message received:', {
+        type: event.data?.type,
+        origin,
+        currentOrigin,
+        match: origin === currentOrigin
+      });
+      
       // Only accept messages from the same origin
       if (origin !== currentOrigin) {
+        console.log('Origin mismatch, ignoring message');
         return;
       }
+      
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        console.log('OAuth success message received');
         if (event.data.token) {
+          console.log('Saving token to localStorage');
           localStorage.setItem('token', event.data.token);
         }
         checkAuth();

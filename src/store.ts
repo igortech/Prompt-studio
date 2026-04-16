@@ -5,6 +5,9 @@ const apiFetch = async (url: string, options: RequestInit = {}) => {
   const headers = new Headers(options.headers || {});
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
+    console.log(`apiFetch ${url} - using token from localStorage`);
+  } else {
+    console.log(`apiFetch ${url} - no token in localStorage`);
   }
   
   const response = await fetch(url, {
@@ -12,6 +15,8 @@ const apiFetch = async (url: string, options: RequestInit = {}) => {
     headers,
     credentials: 'include'
   });
+
+  console.log(`apiFetch ${url} - response status: ${response.status}`);
 
   if (!response.ok) {
     let errorMessage = `Error: ${response.status} ${response.statusText}`;
@@ -266,8 +271,10 @@ export const useStore = create<Store>((set, get) => ({
   setShowTestChat: (show) => set({ showTestChat: show }),
 
   checkAuth: async () => {
+    console.log('checkAuth called');
     try {
       const user = await apiFetch('/api/auth/me');
+      console.log('Auth check successful, user:', user.email);
       try {
         await get().fetchPrompts();
       } catch (e) {
@@ -275,6 +282,7 @@ export const useStore = create<Store>((set, get) => ({
       }
       set({ user, isLoadingAuth: false });
     } catch (e) {
+      console.log('Auth check failed:', (e as any).message);
       set({ user: null, isLoadingAuth: false });
     }
   },

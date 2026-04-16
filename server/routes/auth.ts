@@ -100,16 +100,25 @@ router.get('/callback', async (req, res) => {
 
     res.send(`
       <html>
+        <head>
+          <title>Authenticating...</title>
+        </head>
         <body>
+          <p>Authentication successful. Redirecting...</p>
           <script>
+            console.log('OAuth callback - Token:', '${token}'.substring(0, 20) + '...');
+            
             if (window.opener) {
+              console.log('Sending postMessage to opener');
               window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', token: '${token}' }, '*');
-              window.close();
+              setTimeout(() => {
+                window.close();
+              }, 500);
             } else {
+              console.log('No opener, redirecting to home');
               window.location.href = '/';
             }
           </script>
-          <p>Authentication successful. This window should close automatically.</p>
         </body>
       </html>
     `);

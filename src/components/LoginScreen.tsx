@@ -55,6 +55,7 @@ export function LoginScreen() {
 
   const handleGoogleLogin = async () => {
     try {
+      console.log('Starting Google login...');
       const res = await fetch('/api/auth/url');
       const data = await res.json();
       
@@ -64,6 +65,7 @@ export function LoginScreen() {
       }
       
       const { url } = data;
+      console.log('Opening OAuth window with URL:', url);
       const authWindow = window.open(
         url,
         'oauth_popup',
