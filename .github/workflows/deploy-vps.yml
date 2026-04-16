@@ -53,8 +53,10 @@ jobs:
 
             sudo -n chown -R www-data:www-data dist
 
-            echo "🔄 Restarting app..."
-            sudo -n pm2 restart prompts-app || true
+            echo "🔄 Starting/Restarting app..."
+            sudo -n pm2 delete prompts-app || true
+            sudo -n pm2 start ecosystem.config.js || true
+            sudo -n pm2 save || true
             sleep 3
             
             echo "📋 Checking PM2 logs..."
