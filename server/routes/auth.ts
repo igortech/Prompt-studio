@@ -58,22 +58,22 @@ router.get('/callback', async (req, res) => {
     });
     const tokenData = await tokenRes.json();
 
-    if (tokenData.error) {
-      throw new Error(tokenData.error_description || tokenData.error);
+    if ((tokenData as any).error) {
+      throw new Error((tokenData as any).error_description || (tokenData as any).error);
     }
 
     const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+      headers: { Authorization: `Bearer ${(tokenData as any).access_token}` }
     });
     const userData = await userRes.json();
 
-    let user = await prisma.user.findUnique({ where: { email: userData.email } });
+    let user = await prisma.user.findUnique({ where: { email: (userData as any).email } });
     if (!user) {
       user = await prisma.user.create({
         data: {
-          email: userData.email,
-          name: userData.name,
-          picture: userData.picture,
+          email: (userData as any).email,
+          name: (userData as any).name,
+          picture: (userData as any).picture,
           analysisModel: AI_CONFIG.defaults.models.analysis,
           improvementModel: AI_CONFIG.defaults.models.improvement,
           testModel: AI_CONFIG.defaults.models.test

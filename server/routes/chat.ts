@@ -153,20 +153,29 @@ router.post('/prompt/:promptId', requireAuth, async (req: any, res) => {
       }
 
       const data = await response.json();
+      // @ts-ignore
       logger.info('Chat Response (Ollama)', { model: finalModel, text: data.message?.content });
+      // @ts-ignore
       assistantContent = data.message?.content || '';
       latencyMs = Date.now() - startTime;
 
+      // @ts-ignore
       promptTokens = data.prompt_eval_count || 0;
+      // @ts-ignore
       completionTokens = data.eval_count || 0;
+      // @ts-ignore
       totalTokens = (data.prompt_eval_count || 0) + (data.eval_count || 0);
 
       debugInfo = {
         model: finalModel,
         provider: 'ollama',
+        // @ts-ignore
         total_duration: data.total_duration,
+        // @ts-ignore
         load_duration: data.load_duration,
+        // @ts-ignore
         prompt_eval_count: data.prompt_eval_count,
+        // @ts-ignore
         eval_count: data.eval_count,
         latencyMs
       };
