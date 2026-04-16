@@ -35,6 +35,9 @@ jobs:
             # фиксим права (страховка)
             sudo -n chown -R $USER:$USER "$APP_DIR"
 
+            # Remove old compiled JS files to avoid conflicts
+            find server -name "*.js" -type f -delete || true
+
             git stash || true
             git fetch origin
             git checkout release || true
