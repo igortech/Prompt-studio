@@ -207,6 +207,7 @@ type Store = {
   extractFieldsFromText: (text: string) => Promise<any>;
   extractMetadataFromPrompt: (text: string) => Promise<any>;
   testApiKey: (provider: string, key: string) => Promise<boolean>;
+  fetchApiKeys: () => Promise<{ google?: string; ollama?: string }>;
   runTests: (versionId?: string) => Promise<void>;
   runSingleTest: (testCaseId: string, versionId?: string) => Promise<void>;
   clearMessages: () => Promise<void>;
@@ -817,6 +818,16 @@ export const useStore = create<Store>((set, get) => ({
     } catch (e) {
       console.error('API Key test failed:', e);
       return false;
+    }
+  },
+
+  fetchApiKeys: async () => {
+    try {
+      const data = await apiFetch('/api/auth/keys');
+      return data;
+    } catch (e) {
+      console.error('Failed to fetch API keys:', e);
+      return {};
     }
   },
 

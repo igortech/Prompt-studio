@@ -46,6 +46,60 @@ function sanitizeParams(params: any) {
 }
 
 /**
+ * Helper to call Ollama API
+ */
+export async function generateContentWithOllama(apiKey: string, params: any) {
+  const baseUrl = process.env.OLLAMA_ENDPOINT || 'https://ollama.com/v1';
+  const model = params.model;
+  const contents = params.contents;
+  
+  logger.info('Ollama Request', { model, baseUrl });
+
+  try {
+    // Ollama uses /api/generate endpoint, not /chat/completions
+    const response = await fetch(`${baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+      },
+      body: JSON.stringify({
+        model,
+        prompt: contents,
+        stream: false
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      logger.error('Ollama API Error', error, { model, status: response.status });
+      throw new Error(error.error?.message || `Ollama API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    logger.info('Ollama Response', { model, text: data.response });
+    
+    return {
+      text: data.response || ''
+    };
+  } catch (error: any) {
+    logger.error('Ollama Request Failed', error, { model });
+    throw error;
+  }
+}
+
+/**
+ * Unified function to generate content with any provider
+ */
+export async function generateContent(apiKey: string, provider: string, params: any) {
+  if (provider === 'ollama') {
+    return generateContentWithOllama(apiKey, params);
+  } else {
+    return generateContentWithRetry(apiKey, params);
+  }
+}
+
+/**
  * Helper to call Gemini with exponential backoff retry logic
  * Handles 503 (Service Unavailable) and 429 (Too Many Requests) errors
  */

@@ -3,7 +3,7 @@ import prisma from '../services/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getDecryptedKey } from '../services/crypto.js';
 import { GoogleGenAI } from '@google/genai';
-import { generateContentWithRetry, ThinkingLevel } from '../services/ai.js';
+import { generateContentWithRetry, generateContent, ThinkingLevel } from '../services/ai.js';
 import { getAnalysisPrompt, getImprovePrompt, getEvalPrompt, getChatSystemInstruction, getPromptGenerationPrompt, getPromptExtractionPrompt, getPromptMetadataExtractionPrompt, getTestOptimizationPrompt } from '../prompts/systemPrompts.js';
 import { AI_CONFIG } from '../config/ai.js';
 
@@ -626,29 +626,31 @@ router.post('/extract-fields', requireAuth, async (req: any, res) => {
     const { text } = req.body;
     console.log('[extract-fields] Starting extraction for text length:', text?.length);
     
-    const userKey = await getDecryptedKey(req.user.id, 'google');
-    const apiKey = userKey || process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('Google Gemini API key is not configured');
-
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const provider = user?.analysisProvider || 'google';
     const model = user?.analysisModel;
 
     if (!model) {
       return res.status(400).json({ error: 'Модель для извлечения не выбрана в настройках' });
     }
 
-    console.log('[extract-fields] Using model:', model);
-    logger.info('Extracting fields from text', { model, textLength: text?.length });
+    const userKey = await getDecryptedKey(req.user.id, provider);
+    const apiKey = userKey || (provider === 'google' ? process.env.GEMINI_API_KEY : process.env.OLLAMA_ENDPOINT);
+    if (!apiKey) throw new Error(`${provider} API key is not configured`);
+
+    console.log('[extract-fields] Using provider:', provider, 'model:', model);
+    logger.info('Extracting fields from text', { provider, model, textLength: text?.length });
     
     const prompt = getPromptExtractionPrompt(text);
-    console.log('[extract-fields] Calling generateContentWithRetry...');
+    console.log('[extract-fields] Calling generateContent...');
     
-    const response = await generateContentWithRetry(apiKey, {
+    const { generateContent } = await import('../services/ai.js');
+    const response = await generateContent(apiKey, provider, {
       model: model,
       contents: prompt,
       config: { 
         responseMimeType: 'application/json',
-        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.extraction }
+        thinkingConfig: provider === 'google' ? { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.extraction } : undefined
       }
     });
     
@@ -665,25 +667,27 @@ router.post('/extract-fields', requireAuth, async (req: any, res) => {
 router.post('/extract-metadata', requireAuth, async (req: any, res) => {
   try {
     const { text } = req.body;
-    const userKey = await getDecryptedKey(req.user.id, 'google');
-    const apiKey = userKey || process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('Google Gemini API key is not configured');
-
+    
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const provider = user?.analysisProvider || 'google';
     const model = user?.analysisModel;
 
     if (!model) {
       return res.status(400).json({ error: 'Модель для извлечения метаданных не выбрана в настройках' });
     }
 
-    logger.info('Extracting metadata from prompt', { model });
+    const userKey = await getDecryptedKey(req.user.id, provider);
+    const apiKey = userKey || (provider === 'google' ? process.env.GEMINI_API_KEY : process.env.OLLAMA_ENDPOINT);
+    if (!apiKey) throw new Error(`${provider} API key is not configured`);
+
+    logger.info('Extracting metadata from prompt', { provider, model });
     const prompt = getPromptMetadataExtractionPrompt(text);
-    const response = await generateContentWithRetry(apiKey, {
+    const response = await generateContent(apiKey, provider, {
       model: model,
       contents: prompt,
       config: { 
         responseMimeType: 'application/json',
-        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.extraction }
+        thinkingConfig: provider === 'google' ? { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.extraction } : undefined
       }
     });
     
