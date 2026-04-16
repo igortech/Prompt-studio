@@ -49,5 +49,8 @@ jobs:
 
             # Fix crypto.js if needed
             sed -i 's/crypto_1\.default\./crypto_1./g' server/services/crypto.js || true
+            
+            # Fix express imports if needed
+            find server -name "*.js" -type f -exec sed -i "s/require(\"express\")\.default/require(\"express\")/g" {} \; || true
 
             sudo -n chown -R www-data:www-data dist
