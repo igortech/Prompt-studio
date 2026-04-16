@@ -7,7 +7,7 @@ export const GOOGLE_MODELS = [
 
 export const OLLAMA_MODELS = [
   { id: 'gemma4:31b', name: 'Gemma 4 31B', description: 'Лучший баланс качество/скорость' },
-  { id: 'gemma4:26b', name: 'Gemma 4 26B-A4B', description: 'Максимум качества при ограниченном VRAM' },
+  { id: 'kimi-k2.5', name: 'Kimi K2.5', description: 'Agent Swarm (до 100 суб-агентов)' },
   { id: 'minimax2.5', name: 'MiniMax M2.5', description: 'Агентские задачи / кодинг' },
   { id: 'glm5', name: 'GLM-5', description: 'Длинные контексты / большие выходы' },
   { id: 'qwen3.5:35b', name: 'Qwen 3.5 35B-A3B', description: 'Мультиязычность (201 язык)' },
