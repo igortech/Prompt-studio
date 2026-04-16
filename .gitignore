@@ -9,4 +9,3 @@ coverage/
 prisma/*.db
 prisma/*.db-journal
 /.vscode
-*.js
