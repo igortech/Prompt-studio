@@ -21,7 +21,9 @@ export default function App() {
     
     const handleMessage = (event: MessageEvent) => {
       const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+      const currentOrigin = window.location.origin;
+      // Only accept messages from the same origin
+      if (origin !== currentOrigin) {
         return;
       }
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {

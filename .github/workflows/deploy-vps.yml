@@ -35,14 +35,14 @@ jobs:
             # фиксим права (страховка)
             sudo -n chown -R $USER:$USER "$APP_DIR"
 
-            # Remove old compiled JS files to avoid conflicts
-            find server -name "*.js" -type f -delete || true
-            rm -f server.js
-
             git stash || true
             git fetch origin
             git checkout release || true
             git pull origin release
+
+            # Remove old compiled JS files to avoid conflicts
+            find server -name "*.js" -type f -delete || true
+            rm -f server.js init-db.js
 
             rm -rf node_modules
             npm ci

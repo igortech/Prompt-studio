@@ -88,6 +88,9 @@ router.get('/callback', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    console.log('OAuth callback - Setting cookie for user:', user.email);
+    console.log('OAuth callback - Token created:', token.substring(0, 20) + '...');
+    
     res.cookie('token', token, {
       httpOnly: true,
       secure: true,

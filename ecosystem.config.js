@@ -4,6 +4,7 @@ module.exports = {
       name: 'prompts-app',
       script: './node_modules/.bin/tsx',
       args: 'server.ts',
+      cwd: '/var/www/prompts.neiro-kod.ru',
       instances: 1,
       exec_mode: 'fork',
       env: {

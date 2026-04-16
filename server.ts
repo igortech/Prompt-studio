@@ -24,8 +24,14 @@ import './server/cron/cleanup.js';
 async function startServer() {
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
+  const appUrl = process.env.APP_URL || 'http://localhost:3000';
 
-  app.use(cors());
+  console.log('CORS configured for origin:', appUrl);
+  
+  app.use(cors({
+    origin: appUrl,
+    credentials: true
+  }));
   app.use(express.json());
   app.use(cookieParser());
 
