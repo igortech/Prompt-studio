@@ -4,7 +4,7 @@ import { X, Key, Save, Settings2, MessageSquare, Sparkles, Activity, Eye, EyeOff
 import { GOOGLE_MODELS, OLLAMA_MODELS, DEFAULT_MODELS } from '../constants/models';
 
 export function SettingsModal({ onClose }: { onClose: () => void }) {
-  const { user, updateSettings, testApiKey, addNotification } = useStore();
+  const { user, updateSettings, testApiKey, addNotification, fetchApiKeys } = useStore();
   const [activeTab, setActiveTab] = useState<'keys' | 'models'>('keys');
   
   const [geminiKey, setGeminiKey] = useState('');
@@ -36,8 +36,24 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       setAnalysisModel(user.analysisModel || DEFAULT_MODELS.analysis.model);
       setImprovementProvider(user.improvementProvider || DEFAULT_MODELS.improvement.provider);
       setImprovementModel(user.improvementModel || DEFAULT_MODELS.improvement.model);
+      
+      // Load API keys
+      console.log('[SettingsModal] Loading API keys...');
+      fetchApiKeys().then(keys => {
+        console.log('[SettingsModal] API keys loaded:', { hasGoogle: !!keys.google, hasOllama: !!keys.ollama });
+        if (keys.google) {
+          console.log('[SettingsModal] Setting Gemini key');
+          setGeminiKey(keys.google);
+        }
+        if (keys.ollama) {
+          console.log('[SettingsModal] Setting Ollama key');
+          setOllamaKey(keys.ollama);
+        }
+      }).catch(err => {
+        console.error('[SettingsModal] Failed to load API keys:', err);
+      });
     }
-  }, [user]);
+  }, [user, fetchApiKeys]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -197,7 +213,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                   <div className="relative flex-1">
                     <input 
                       type={showGeminiKey ? 'text' : 'password'}
-                      placeholder={user?.hasGeminiKey ? '••••••••••••••••' : 'Введите ключ Gemini API'}
+                      placeholder={geminiKey ? '••••••••••••••••' : 'Введите ключ Gemini API'}
                       value={geminiKey}
                       onChange={e => setGeminiKey(e.target.value)}
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -236,7 +252,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                   <div className="relative flex-1">
                     <input 
                       type={showOllamaKey ? 'text' : 'password'}
-                      placeholder={user?.hasOllamaKey ? '••••••••••••••••' : 'Введите ключ Ollama API'}
+                      placeholder={ollamaKey ? '••••••••••••••••' : 'Введите ключ Ollama API'}
                       value={ollamaKey}
                       onChange={e => setOllamaKey(e.target.value)}
                       className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg pl-3 pr-10 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
