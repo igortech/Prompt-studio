@@ -21,6 +21,9 @@ router.get('/url', (req, res) => {
   const redirectUri = `${process.env.APP_URL}/auth/callback`;
   console.log('DEBUG: APP_URL =', process.env.APP_URL);
   console.log('DEBUG: redirectUri =', redirectUri);
+  console.log('DEBUG: Request origin =', req.get('origin'));
+  console.log('DEBUG: Request host =', req.get('host'));
+  console.log('DEBUG: Request protocol =', req.protocol);
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
