@@ -87,4 +87,3 @@ function getDecryptedKey(userId, provider) {
         });
     });
 }
-
