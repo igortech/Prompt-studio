@@ -5,7 +5,7 @@ import prisma from '../services/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { encryptKey, getDecryptedKey } from '../services/crypto.js';
 import { GoogleGenAI } from '@google/genai';
-import { generateContentWithRetry } from '../services/ai.js';
+import { generateContentWithRetry, generateContent } from '../services/ai.js';
 import { AI_CONFIG } from '../config/ai.js';
 
 import { logger } from '../services/logger.js';
@@ -326,7 +326,6 @@ router.post('/test-key', requireAuth, async (req: any, res) => {
       return res.json({ success: !!response.text });
     } else if (provider === 'ollama') {
       logger.info('Testing Ollama API key');
-      // Simple health check for Ollama Cloud if we have an endpoint
       const response = await fetch('https://api.ollama.com/v1/models', {
         headers: { 'Authorization': `Bearer ${key}` }
       });

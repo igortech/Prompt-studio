@@ -4,7 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { getDecryptedKey } from '../services/crypto.js';
 import { GoogleGenAI, Type } from '@google/genai';
 import { getEvalPrompt, getTestingPrompt } from '../prompts/systemPrompts.js';
-import { generateContentWithRetry, ThinkingLevel } from '../services/ai.js';
+import { generateContentWithRetry, generateContent, ThinkingLevel } from '../services/ai.js';
 import { AI_CONFIG } from '../config/ai.js';
 
 import { logger } from '../services/logger.js';
@@ -19,63 +19,93 @@ router.post('/prompt/:promptId/generate-scenarios', requireAuth, async (req: any
     const prompt = await prisma.prompt.findUnique({ where: { id: promptId } });
     if (!prompt || prompt.userId !== req.user.id) return res.status(404).json({ error: 'Prompt not found' });
 
-    const userKey = await getDecryptedKey(req.user.id, 'google');
-    const apiKey = userKey || process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('Google Gemini API key is not configured');
-    const ai = new GoogleGenAI({ apiKey });
-
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const provider = user?.analysisProvider || 'google';
     const model = user?.analysisModel;
 
     if (!model) {
       return res.status(400).json({ error: 'Модель для анализа не выбрана в настройках' });
     }
 
-    logger.info('Generating test scenarios', { promptId, model });
+    logger.info('Generating test scenarios', { promptId, model, provider });
     const systemInstruction = getTestingPrompt(prompt.content, scenarioCount);
 
-    const response = await generateContentWithRetry(apiKey, {
-      model,
-      contents: 'Сгенерируй тестовые сценарии.',
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.generation },
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              type: { type: Type.STRING },
-              description: { type: Type.STRING },
-              input: { type: Type.STRING },
-              expected_aspects: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              }
-            },
-            required: ['type', 'description', 'input', 'expected_aspects']
+    if (provider === 'google') {
+      const userKey = await getDecryptedKey(req.user.id, 'google');
+      const apiKey = userKey || process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error('Google Gemini API key is not configured');
+
+      const response = await generateContentWithRetry(apiKey, {
+        model,
+        contents: 'Сгенерируй тестовые сценарии.',
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.generation },
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                type: { type: Type.STRING },
+                description: { type: Type.STRING },
+                input: { type: Type.STRING },
+                expected_aspects: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING }
+                }
+              },
+              required: ['type', 'description', 'input', 'expected_aspects']
+            }
           }
         }
+      });
+
+      const text = response.text || '[]';
+      const scenarios = JSON.parse(text);
+
+      const createdTestCases = [];
+      for (const scenario of scenarios) {
+        const tc = await prisma.testCase.create({
+          data: {
+            promptId,
+            input: scenario.input,
+            expectedOutput: scenario.expected_aspects.join(', ')
+          }
+        });
+        createdTestCases.push(tc);
       }
-    });
 
-    const text = response.text || '[]';
-    const scenarios = JSON.parse(text);
+      res.json(createdTestCases);
+    } else if (provider === 'ollama') {
+      const userKey = await getDecryptedKey(req.user.id, 'ollama');
+      if (!userKey) throw new Error('Ollama API key is not configured in settings');
 
-    const createdTestCases = [];
-    for (const scenario of scenarios) {
-      const tc = await prisma.testCase.create({
-        data: {
-          promptId,
-          input: scenario.input,
-          expectedOutput: scenario.expected_aspects.join(', ')
+      const response = await generateContent(userKey, 'ollama', {
+        model,
+        contents: `${systemInstruction}\n\nСгенерируй тестовые сценарии. Верни ТОЛЬКО валидный JSON массив объектов с полями: type, description, input, expected_aspects (массив строк).`,
+        config: { 
+          responseMimeType: 'application/json'
         }
       });
-      createdTestCases.push(tc);
-    }
 
-    res.json(createdTestCases);
+      const text = response.text || '[]';
+      const scenarios = JSON.parse(text);
+
+      const createdTestCases = [];
+      for (const scenario of scenarios) {
+        const tc = await prisma.testCase.create({
+          data: {
+            promptId,
+            input: scenario.input,
+            expectedOutput: scenario.expected_aspects.join(', ')
+          }
+        });
+        createdTestCases.push(tc);
+      }
+
+      res.json(createdTestCases);
+    }
   } catch (error: any) {
     console.error('Generate scenarios error:', error);
     res.status(500).json({ error: error.message });
@@ -167,32 +197,47 @@ router.post('/:id/run', requireAuth, async (req: any, res) => {
       }
     }
 
-    const userKey = await getDecryptedKey(req.user.id, 'google');
-    const apiKey = userKey || process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
-    const ai = new GoogleGenAI({ apiKey });
-
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const testProvider = user?.testProvider || 'google';
     const testModel = user?.testModel;
+    const analysisProvider = user?.analysisProvider || 'google';
     const analysisModel = user?.analysisModel;
 
     if (!testModel || !analysisModel) {
       return res.status(400).json({ error: 'Модели для тестирования или анализа не выбраны в настройках' });
     }
 
-    logger.info('Running test case', { promptId: testCase.promptId, testCaseId, testModel, analysisModel });
+    logger.info('Running test case', { promptId: testCase.promptId, testCaseId, testModel, analysisModel, testProvider, analysisProvider });
 
     // 1. Generate actual output
     let actualOutput = '';
     try {
-      const genResponse = await generateContentWithRetry(apiKey, {
-        model: testModel,
-        contents: testCase.input,
-        config: {
-          systemInstruction: promptContent,
-        }
-      });
-      actualOutput = genResponse.text || '';
+      if (testProvider === 'google') {
+        const userKey = await getDecryptedKey(req.user.id, 'google');
+        const apiKey = userKey || process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
+
+        const genResponse = await generateContentWithRetry(apiKey, {
+          model: testModel,
+          contents: testCase.input,
+          config: {
+            systemInstruction: promptContent,
+          }
+        });
+        actualOutput = genResponse.text || '';
+      } else if (testProvider === 'ollama') {
+        const userKey = await getDecryptedKey(req.user.id, 'ollama');
+        if (!userKey) throw new Error('Ollama API key is not configured in settings');
+
+        const genResponse = await generateContent(userKey, 'ollama', {
+          model: testModel,
+          contents: testCase.input,
+          config: {
+            systemInstruction: promptContent,
+          }
+        });
+        actualOutput = genResponse.text || '';
+      }
     } catch (e: any) {
       logger.error('Failed to generate output for test case', e, { testCaseId });
       actualOutput = `Error generating output: ${e.message}`;
@@ -202,15 +247,33 @@ router.post('/:id/run', requireAuth, async (req: any, res) => {
     const evalPrompt = getEvalPrompt(promptContent, testCase.input, testCase.expectedOutput, actualOutput);
     let evaluation = { score: 0, reasoning: 'Failed to evaluate', passed: false, metrics: {} };
     try {
-      const evalResponse = await generateContentWithRetry(apiKey, {
-        model: analysisModel,
-        contents: evalPrompt,
-        config: { 
-          responseMimeType: 'application/json',
-          thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.evaluation }
-        }
-      });
-      evaluation = JSON.parse(evalResponse.text || '{}');
+      if (analysisProvider === 'google') {
+        const userKey = await getDecryptedKey(req.user.id, 'google');
+        const apiKey = userKey || process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error('Google Gemini API key is not configured in settings');
+
+        const evalResponse = await generateContentWithRetry(apiKey, {
+          model: analysisModel,
+          contents: evalPrompt,
+          config: { 
+            responseMimeType: 'application/json',
+            thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.evaluation }
+          }
+        });
+        evaluation = JSON.parse(evalResponse.text || '{}');
+      } else if (analysisProvider === 'ollama') {
+        const userKey = await getDecryptedKey(req.user.id, 'ollama');
+        if (!userKey) throw new Error('Ollama API key is not configured in settings');
+
+        const evalResponse = await generateContent(userKey, 'ollama', {
+          model: analysisModel,
+          contents: evalPrompt,
+          config: { 
+            responseMimeType: 'application/json'
+          }
+        });
+        evaluation = JSON.parse(evalResponse.text || '{}');
+      }
     } catch (e) {
       logger.error('Failed to evaluate test case', e, { testCaseId });
       console.error('Eval error:', e);

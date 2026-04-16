@@ -546,29 +546,47 @@ router.post('/:id/run-tests', requireAuth, async (req: any, res) => {
 router.post('/generate-from-fields', requireAuth, async (req: any, res) => {
   try {
     const { fields } = req.body;
-    const userKey = await getDecryptedKey(req.user.id, 'google');
-    const apiKey = userKey || process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('Google Gemini API key is not configured');
-
+    
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const provider = user?.analysisProvider || 'google';
     const model = user?.analysisModel;
 
     if (!model) {
       return res.status(400).json({ error: 'Модель для генерации не выбрана в настройках' });
     }
 
-    logger.info('Generating prompt from fields', { model });
+    logger.info('Generating prompt from fields', { model, provider });
     const prompt = getPromptGenerationPrompt(fields);
-    const response = await generateContentWithRetry(apiKey, {
-      model: model,
-      contents: prompt,
-      config: { 
-        responseMimeType: 'application/json',
-        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.generation }
-      }
-    });
     
-    res.json(JSON.parse(response.text || '{}'));
+    if (provider === 'google') {
+      const userKey = await getDecryptedKey(req.user.id, 'google');
+      const apiKey = userKey || process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error('Google Gemini API key is not configured');
+
+      const response = await generateContentWithRetry(apiKey, {
+        model: model,
+        contents: prompt,
+        config: { 
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.generation }
+        }
+      });
+      
+      res.json(JSON.parse(response.text || '{}'));
+    } else if (provider === 'ollama') {
+      const userKey = await getDecryptedKey(req.user.id, 'ollama');
+      if (!userKey) throw new Error('Ollama API key is not configured in settings');
+
+      const response = await generateContent(userKey, 'ollama', {
+        model: model,
+        contents: prompt,
+        config: { 
+          responseMimeType: 'application/json'
+        }
+      });
+      
+      res.json(JSON.parse(response.text || '{}'));
+    }
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -664,31 +682,47 @@ router.post('/:id/optimize-from-tests', requireAuth, async (req: any, res) => {
     const prompt = await prisma.prompt.findUnique({ where: { id: promptId } });
     if (!prompt || prompt.userId !== req.user.id) return res.status(404).json({ error: 'Prompt not found' });
 
-    const userKey = await getDecryptedKey(req.user.id, 'google');
-    const apiKey = userKey || process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error('Google Gemini API key is not configured');
-
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const provider = user?.improvementProvider || 'google';
     const improvementModel = user?.improvementModel;
 
     if (!improvementModel) {
       return res.status(400).json({ error: 'Модель для улучшения не выбрана в настройках' });
     }
 
-    logger.info('Optimizing prompt from tests', { promptId, model: improvementModel });
+    logger.info('Optimizing prompt from tests', { promptId, model: improvementModel, provider });
     
     const optimizationPrompt = getTestOptimizationPrompt(prompt.content, testResults);
     
-    const response = await generateContentWithRetry(apiKey, {
-      model: improvementModel,
-      contents: optimizationPrompt,
-      config: { 
-        responseMimeType: 'application/json',
-        thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.improvement }
-      }
-    });
+    if (provider === 'google') {
+      const userKey = await getDecryptedKey(req.user.id, 'google');
+      const apiKey = userKey || process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error('Google Gemini API key is not configured');
 
-    res.json(JSON.parse(response.text || '{}'));
+      const response = await generateContentWithRetry(apiKey, {
+        model: improvementModel,
+        contents: optimizationPrompt,
+        config: { 
+          responseMimeType: 'application/json',
+          thinkingConfig: { thinkingLevel: AI_CONFIG.defaults.thinkingLevels.improvement }
+        }
+      });
+
+      res.json(JSON.parse(response.text || '{}'));
+    } else if (provider === 'ollama') {
+      const userKey = await getDecryptedKey(req.user.id, 'ollama');
+      if (!userKey) throw new Error('Ollama API key is not configured in settings');
+
+      const response = await generateContent(userKey, 'ollama', {
+        model: improvementModel,
+        contents: optimizationPrompt,
+        config: { 
+          responseMimeType: 'application/json'
+        }
+      });
+
+      res.json(JSON.parse(response.text || '{}'));
+    }
   } catch (error: any) {
     logger.error('Optimization error', { error: error.message });
     res.status(500).json({ error: error.message });
