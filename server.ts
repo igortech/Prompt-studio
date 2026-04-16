@@ -32,6 +32,13 @@ async function startServer() {
     origin: appUrl,
     credentials: true
   }));
+  
+  // Log all requests
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.path} - Origin: ${req.get('origin')} - Cookies: ${Object.keys(req.cookies).join(', ') || 'none'}`);
+    next();
+  });
+  
   app.use(express.json());
   app.use(cookieParser());
 

@@ -252,6 +252,15 @@ router.post('/logout', (req, res) => {
   res.json({ success: true });
 });
 
+router.get('/check-cookie', (req, res) => {
+  const token = req.cookies.token;
+  console.log('Check cookie - token present:', !!token);
+  res.json({ 
+    hasCookie: !!token,
+    cookieValue: token ? token.substring(0, 20) + '...' : null
+  });
+});
+
 router.get('/keys', requireAuth, async (req: any, res) => {
   const googleKey = await getDecryptedKey(req.user.id, 'google');
   const ollamaKey = await getDecryptedKey(req.user.id, 'ollama');
