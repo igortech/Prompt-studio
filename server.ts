@@ -32,8 +32,26 @@ async function startServer() {
   console.log('CORS configured for origin:', appUrl);
   
   app.use(cors({
-    origin: appUrl,
-    credentials: true
+    origin: (origin, callback) => {
+      // Allow requests from APP_URL and localhost for development
+      const allowedOrigins = [appUrl, 'http://localhost:3000', 'http://localhost:5173', 'http://localhost:3001'];
+      
+      // Log CORS check
+      console.log(`[CORS] Request origin: ${origin || 'undefined'}`);
+      console.log(`[CORS] Allowed origins:`, allowedOrigins);
+      
+      // Allow if no origin (same-origin requests) or if origin is in allowed list
+      if (!origin || allowedOrigins.includes(origin)) {
+        console.log(`[CORS] ✅ Allowing request`);
+        callback(null, true);
+      } else {
+        console.log(`[CORS] ❌ Blocking request from ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
   }));
   
   app.use(express.json());
@@ -42,7 +60,11 @@ async function startServer() {
   // Log all requests
   app.use((req, res, next) => {
     const cookieKeys = req.cookies ? Object.keys(req.cookies).join(', ') : 'none';
-    console.log(`${req.method} ${req.path} - Origin: ${req.get('origin')} - Cookies: ${cookieKeys}`);
+    const authHeader = req.headers.authorization ? `${req.headers.authorization.substring(0, 30)}...` : 'none';
+    console.log(`[${req.method}] ${req.path}`);
+    console.log(`  Origin: ${req.get('origin') || 'undefined'}`);
+    console.log(`  Authorization: ${authHeader}`);
+    console.log(`  Cookies: ${cookieKeys}`);
     next();
   });
 

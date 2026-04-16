@@ -127,21 +127,25 @@ router.get('/callback', async (req, res) => {
         <body>
           <p>Authentication successful. Redirecting...</p>
           <script>
-            console.log('OAuth callback - Token:', '${token}'.substring(0, 20) + '...');
+            const token = '${token}';
+            console.log('OAuth callback - Token:', token.substring(0, 20) + '...');
             
             // Store token in sessionStorage for parent window to pick up
             if (window.opener) {
               try {
-                window.opener.sessionStorage.setItem('oauth_token', '${token}');
+                window.opener.sessionStorage.setItem('oauth_token', token);
                 console.log('Token stored in opener sessionStorage');
               } catch (e) {
                 console.log('Could not access opener sessionStorage:', e);
               }
-            }
-            
-            if (window.opener) {
-              console.log('Sending postMessage to opener');
-              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', token: '${token}' }, '*');
+              
+              try {
+                console.log('Sending postMessage to opener');
+                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', token: token }, '*');
+              } catch (e) {
+                console.log('Could not send postMessage:', e);
+              }
+              
               setTimeout(() => {
                 window.close();
               }, 500);
@@ -237,6 +241,8 @@ router.post('/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    console.log('Generated token:', token.substring(0, 30) + '...');
+
     res.cookie('token', token, {
       httpOnly: true,
       secure: true,
@@ -244,6 +250,7 @@ router.post('/login', async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
+    console.log('Cookie set, sending response with token');
     res.json({ success: true, token, user: { id: user.id, email: user.email, name: user.name } });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

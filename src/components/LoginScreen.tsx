@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bot, Mail, Lock, User } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -9,6 +9,21 @@ export function LoginScreen() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // Listen for OAuth callback message from popup
+    const handleMessage = (event: MessageEvent) => {
+      console.log('Received message:', event.data);
+      if (event.data.type === 'OAUTH_AUTH_SUCCESS' && event.data.token) {
+        console.log('OAuth token received, saving to localStorage');
+        localStorage.setItem('token', event.data.token);
+        checkAuth();
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [checkAuth]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();

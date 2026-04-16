@@ -3,11 +3,15 @@ import { create } from 'zustand';
 const apiFetch = async (url: string, options: RequestInit = {}) => {
   const token = localStorage.getItem('token');
   const headers = new Headers(options.headers || {});
+  
+  console.log(`[apiFetch] ${url}`);
+  console.log(`[apiFetch] Token in localStorage:`, token ? `${token.substring(0, 20)}...` : 'MISSING');
+  
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
-    console.log(`apiFetch ${url} - using token from localStorage`);
+    console.log(`[apiFetch] Setting Authorization header`);
   } else {
-    console.log(`apiFetch ${url} - no token in localStorage`);
+    console.log(`[apiFetch] NO TOKEN - will send request without Authorization header`);
   }
   
   const response = await fetch(url, {
@@ -16,7 +20,7 @@ const apiFetch = async (url: string, options: RequestInit = {}) => {
     credentials: 'include'
   });
 
-  console.log(`apiFetch ${url} - response status: ${response.status}`);
+  console.log(`[apiFetch] ${url} - response status: ${response.status}`);
 
   if (!response.ok) {
     let errorMessage = `Error: ${response.status} ${response.statusText}`;
