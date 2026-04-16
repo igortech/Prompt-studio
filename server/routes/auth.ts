@@ -112,6 +112,16 @@ router.get('/callback', async (req, res) => {
           <script>
             console.log('OAuth callback - Token:', '${token}'.substring(0, 20) + '...');
             
+            // Store token in sessionStorage for parent window to pick up
+            if (window.opener) {
+              try {
+                window.opener.sessionStorage.setItem('oauth_token', '${token}');
+                console.log('Token stored in opener sessionStorage');
+              } catch (e) {
+                console.log('Could not access opener sessionStorage:', e);
+              }
+            }
+            
             if (window.opener) {
               console.log('Sending postMessage to opener');
               window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', token: '${token}' }, '*');

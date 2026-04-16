@@ -17,6 +17,14 @@ export default function App() {
     const savedTheme = localStorage.getItem('theme') || 'dark';
     setTheme(savedTheme as 'light' | 'dark');
     
+    // Check for token in sessionStorage (from OAuth callback)
+    const oauthToken = sessionStorage.getItem('oauth_token');
+    if (oauthToken) {
+      console.log('Found token in sessionStorage from OAuth callback');
+      localStorage.setItem('token', oauthToken);
+      sessionStorage.removeItem('oauth_token');
+    }
+    
     checkAuth();
     
     const handleMessage = (event: MessageEvent) => {
